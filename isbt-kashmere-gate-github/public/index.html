@@ -1,0 +1,2624 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ISBT Kashmere Gate - Smart Crowd Odometer & Delhi All-Bus Transit Navigation</title>
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#ecfdf5', 500: '#10b981', 600: '#059669', 700: '#047857' },
+            transit: { blue: '#0284c7', orange: '#ea580c', dark: '#0b1120', navy: '#0f172a' }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Leaflet CSS & JS via CDN -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Google Fonts & Font Awesome Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      user-select: none;
+      background-color: #0b1120;
+      color: #f8fafc;
+    }
+    .font-display { font-family: 'Orbitron', sans-serif; }
+    .font-accent { font-family: 'Syne', sans-serif; }
+
+    #main-map {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      background: #e2e8f0;
+    }
+
+    #splash-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: radial-gradient(circle at center, #065f46 0%, #064e3b 35%, #022c22 70%, #030712 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      transition: opacity 0.6s ease, visibility 0.6s ease;
+    }
+    .radar-logo-container {
+      position: relative;
+      width: 170px;
+      height: 170px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .radar-ring-outer {
+      position: absolute;
+      inset: 0;
+      border: 3px dashed rgba(52, 211, 153, 0.6);
+      border-radius: 50%;
+      animation: spinClockwise 8s linear infinite;
+    }
+    .radar-ring-mid {
+      position: absolute;
+      inset: 15px;
+      border: 4px solid transparent;
+      border-top-color: #38bdf8;
+      border-bottom-color: #34d399;
+      border-radius: 50%;
+      animation: spinCounter 4s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
+    }
+    .radar-sweep-blade {
+      position: absolute;
+      inset: 20px;
+      border-radius: 50%;
+      background: conic-gradient(from 0deg, rgba(52, 211, 153, 0.45) 0deg, transparent 65deg, transparent 360deg);
+      animation: spinClockwise 2.2s linear infinite;
+    }
+    .logo-center-bus {
+      position: relative;
+      z-index: 10;
+      animation: busFloat 2s ease-in-out infinite alternate;
+      filter: drop-shadow(0 0 22px rgba(52, 211, 153, 0.9));
+    }
+    @keyframes spinClockwise { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    @keyframes spinCounter { 0% { transform: rotate(360deg); } 100% { transform: rotate(0deg); } }
+    @keyframes busFloat { 0% { transform: scale(0.96) translateY(2px); } 100% { transform: scale(1.08) translateY(-4px); } }
+
+    .take-me-there-btn {
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 17px;
+      padding: 13px 34px;
+      border-radius: 12px;
+      box-shadow: 0 12px 28px -4px rgba(2, 132, 199, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+      border: 1.5px solid rgba(255, 255, 255, 0.3);
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+    }
+    .take-me-there-btn:hover {
+      background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%);
+      transform: translateY(-2px) scale(1.02);
+      box-shadow: 0 16px 32px -4px rgba(2, 132, 199, 0.65);
+    }
+
+    @keyframes wrongDirectionPulse {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.85);
+        border-color: #ef4444;
+        background-color: rgba(220, 38, 38, 0.95);
+      }
+      50% {
+        box-shadow: 0 0 35px 12px rgba(239, 68, 68, 0.9);
+        border-color: #ffffff;
+        background-color: rgba(185, 28, 28, 1);
+      }
+    }
+    .wrong-way-alert-box {
+      animation: wrongDirectionPulse 0.8s infinite ease-in-out;
+    }
+
+    .walking-person-avatar {
+      width: 38px;
+      height: 38px;
+      background: #0284c7;
+      color: #ffffff;
+      border: 3px solid #ffffff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      box-shadow: 0 0 16px rgba(2, 132, 199, 0.85);
+      transition: transform 0.2s ease-out;
+      position: relative;
+    }
+    .walking-person-avatar.danger {
+      background: #ef4444;
+      box-shadow: 0 0 24px rgba(239, 68, 68, 1);
+    }
+    .walking-person-avatar::after {
+      content: '';
+      position: absolute;
+      inset: -8px;
+      border-radius: 50%;
+      background: rgba(2, 132, 199, 0.25);
+      animation: pulseRadar 1.8s infinite;
+      z-index: -1;
+    }
+    @keyframes pulseRadar {
+      0% { transform: scale(1); opacity: 0.8; }
+      100% { transform: scale(2.4); opacity: 0; }
+    }
+
+    .origin-marker-dot {
+      width: 24px;
+      height: 24px;
+      background: #0078d4;
+      border: 4px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 0 14px rgba(0, 120, 212, 0.8);
+      position: relative;
+    }
+    .origin-marker-dot::after {
+      content: '';
+      position: absolute;
+      inset: -6px;
+      border-radius: 50%;
+      background: rgba(0, 120, 212, 0.35);
+      animation: pulseRadar 2s infinite;
+    }
+
+    .dest-marker-pin {
+      width: 32px;
+      height: 32px;
+      background: #ea580c;
+      color: #ffffff;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 10px rgba(234, 88, 12, 0.5);
+      border: 2px solid #ffffff;
+    }
+    .dest-marker-pin i {
+      transform: rotate(45deg);
+      font-size: 13px;
+    }
+
+    .station-marker-pill {
+      background: #0f172a;
+      color: #38bdf8;
+      border: 1.5px solid #38bdf8;
+      border-radius: 9999px;
+      font-weight: 800;
+      font-size: 10px;
+      padding: 3px 8px;
+      text-align: center;
+      white-space: nowrap;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .station-marker-pill:hover {
+      transform: scale(1.1);
+      background: #0284c7;
+      color: #ffffff;
+      border-color: #ffffff;
+    }
+    .station-marker-pill.private {
+      background: #701a75;
+      color: #f472b6;
+      border-color: #f472b6;
+    }
+    .station-marker-pill.isbt {
+      background: #064e3b;
+      color: #34d399;
+      border-color: #34d399;
+    }
+
+    .glass-card {
+      background: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(12px);
+      border: 1.5px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+  </style>
+</head>
+
+<body class="h-screen w-screen overflow-hidden flex flex-col relative">
+
+  <!-- ==================== 1. OPENING SPLASH SCREEN ==================== -->
+  <div id="splash-screen">
+    <div class="radar-logo-container mb-6">
+      <div class="radar-ring-outer"></div>
+      <div class="radar-ring-mid"></div>
+      <div class="radar-sweep-blade"></div>
+      <i class="fa-solid fa-bus text-5xl text-emerald-400 logo-center-bus"></i>
+    </div>
+    <div class="flex items-center gap-2.5 mb-2">
+      <span class="bg-amber-400 text-slate-950 font-black text-xs px-3 py-1 rounded-full uppercase tracking-wider">DELHI TRANSIT HUB</span>
+      <span class="bg-sky-500/30 text-sky-200 border border-sky-400/50 text-xs px-3 py-1 rounded-full font-black uppercase tracking-wider">ISBT KASHMERE GATE</span>
+    </div>
+    <h1 class="text-3xl md:text-5xl font-display font-black tracking-widest italic mb-2 text-white drop-shadow-lg text-center">
+      SMART <span class="text-emerald-400">CROWD</span> &amp; <span class="text-sky-400">BUS TRANSIT</span>
+    </h1>
+    <p class="text-xs md:text-sm font-accent font-extrabold tracking-widest italic text-emerald-200 uppercase text-center px-4">
+      Real-Time Congestion Odometer • Complete Delhi Private &amp; Local Bus Navigation
+    </p>
+    <div class="mt-6 flex items-center gap-2 text-xs text-emerald-300 font-bold bg-slate-900/60 px-5 py-2 rounded-full border border-emerald-500/30">
+      <i class="fa-solid fa-circle-notch fa-spin text-emerald-400"></i> Calibrating Geo-Fences &amp; CCTV Odometer...
+    </div>
+  </div>
+
+  <!-- ==================== 2. GLOBAL LANGUAGE SELECTION MODAL ==================== -->
+  <div id="language-modal" class="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/80 backdrop-blur-md transition-opacity duration-300 p-4 hidden">
+    <div class="glass-card rounded-3xl p-7 max-w-md w-full border-2 border-emerald-500/60 shadow-2xl text-center text-white space-y-5">
+      <div class="w-16 h-16 bg-emerald-500/10 text-emerald-400 rounded-full flex items-center justify-center mx-auto border-2 border-emerald-500/30 text-3xl">
+        <i class="fa-solid fa-language"></i>
+      </div>
+      <div>
+        <h2 class="text-2xl font-accent font-black italic">Select Language / भाषा चुनें</h2>
+        <p class="text-slate-400 text-xs italic font-bold mt-1">Choose English or Hindi for voice guide and smart transit alerts</p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 text-left">
+        <button type="button" id="lang-opt-en" onclick="selectModalLanguage('en-IN')" class="border-2 border-emerald-500 bg-emerald-500/15 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 hover:border-emerald-400 transition-all text-center cursor-pointer shadow-md">
+          <span class="text-3xl">🇬🇧</span>
+          <span class="text-sm font-bold text-white">English</span>
+          <span class="text-[10px] text-emerald-300 font-semibold">Default Voice &amp; UI</span>
+        </button>
+
+        <button type="button" id="lang-opt-hi" onclick="selectModalLanguage('hi-IN')" class="border-2 border-slate-700 bg-slate-900/80 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 hover:border-emerald-400 transition-all text-center cursor-pointer shadow-md">
+          <span class="text-3xl">🇮🇳</span>
+          <span class="text-sm font-bold text-white">हिन्दी (Hindi)</span>
+          <span class="text-[10px] text-slate-400 font-semibold">आवाज़ और दिशा-निर्देश</span>
+        </button>
+      </div>
+
+      <select id="global-lang-select" onchange="syncLangCards(this.value)" class="bg-slate-900 text-white border-2 border-slate-700 rounded-xl p-3 font-bold text-xs focus:outline-none focus:border-emerald-500 w-full cursor-pointer">
+        <option value="en-IN" selected>🇬🇧 English (Global / India)</option>
+        <option value="hi-IN">🇮🇳 हिन्दी (Hindi)</option>
+      </select>
+
+      <div class="space-y-2.5 pt-1">
+        <button type="button" onclick="testCurrentModalVoice()" class="w-full bg-slate-800 hover:bg-slate-700 text-emerald-300 font-bold rounded-xl p-2.5 text-xs flex items-center justify-center gap-2 border border-slate-700 transition-all shadow-sm cursor-pointer">
+          <i class="fa-solid fa-volume-high text-emerald-400"></i>
+          <span>Listen Sample Voice / आवाज़ का नमूना सुनें</span>
+        </button>
+        <button onclick="applyLanguageSelection()" class="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-black rounded-xl p-3 text-xs uppercase tracking-wider italic shadow-xl transition-transform active:scale-95 cursor-pointer">
+          Confirm Language &amp; Start App / पुष्टि करें और शुरू करें
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 3. TOP AMBIENT HEADER & SEARCH BAR ==================== -->
+  <header class="absolute top-0 left-0 right-0 z-20 bg-slate-950/85 backdrop-blur-md border-b border-slate-800/80 px-4 py-2.5 flex items-center justify-between gap-4">
+    
+    <!-- Left Logo & Branding -->
+    <div class="flex items-center gap-3 shrink-0">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-sky-600 text-white flex items-center justify-center text-lg shadow-md shadow-emerald-500/20">
+        <i class="fa-solid fa-bus"></i>
+      </div>
+      <div class="hidden sm:block">
+        <h1 class="text-sm font-extrabold tracking-tight flex items-center gap-2">
+          <span>ISBT KASHMERE GATE</span>
+          <span class="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono font-bold px-2 py-0.5 rounded-full">DELHI CENTRAL</span>
+        </h1>
+        <p class="text-[10px] text-slate-400 font-semibold">Live Congestion Odometer • Complete Private &amp; Local Transit</p>
+      </div>
+    </div>
+
+    <!-- Center Universal Search Box -->
+    <div class="flex-1 max-w-lg relative">
+      <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+      <input type="text" id="universalSearchInput" oninput="handleUniversalSearch(this.value)" placeholder="Search any station or bus... (e.g. Majnu Ka Tila, 550, Katra, Anand Vihar)" class="w-full bg-slate-900/90 border border-slate-700 rounded-xl pl-9 pr-8 py-2 text-xs font-bold text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 shadow-inner">
+      <button onclick="clearUniversalSearch()" id="clearUniversalSearchBtn" class="hidden absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs"><i class="fa-solid fa-xmark"></i></button>
+
+      <!-- Autocomplete Dropdown -->
+      <div id="universalSearchResults" class="hidden absolute left-0 right-0 top-full mt-1.5 bg-slate-900/95 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden z-50 max-h-72 overflow-y-auto backdrop-blur-md"></div>
+    </div>
+
+    <!-- Top Right Shortcuts & IST Clock -->
+    <div class="flex items-center gap-3 shrink-0">
+      <div class="hidden md:flex items-center gap-1.5">
+        <button onclick="toggleCrowdSector()" class="bg-gradient-to-r from-rose-500/20 to-amber-500/20 hover:from-rose-500/30 hover:to-amber-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5">
+          <i class="fa-solid fa-gauge-high text-amber-400"></i>
+          <span id="header-crowd-btn-text">Crowd Odometer</span>
+        </button>
+
+        <button onclick="openAllStationsModal()" class="bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-xs font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5">
+          <i class="fa-solid fa-map-pin text-sky-400"></i>
+          <span id="header-stations-btn-text">All Delhi Stations</span>
+        </button>
+
+        <button onclick="openBusStatusModal()" class="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5">
+          <i class="fa-solid fa-bus-simple text-amber-400"></i>
+          <span id="header-bus-status-btn-text">Bus Status</span>
+        </button>
+
+        <button onclick="openLanguageModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-bold px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 transition-all" title="Select Language / भाषा चुनें">
+          <i class="fa-solid fa-globe text-emerald-400"></i>
+          <span id="header-lang-display">🇬🇧 English</span>
+        </button>
+      </div>
+
+      <div class="text-right border-l border-slate-800 pl-3 hidden lg:block">
+        <div class="flex items-center justify-end gap-1.5">
+          <i class="fa-solid fa-sun text-amber-400 text-xs animate-spin" style="animation-duration: 20s;"></i>
+          <span class="text-xs font-black font-display text-white">28°C <span class="text-[10px] text-amber-400 font-mono">AQI 184</span></span>
+        </div>
+        <div id="clock-live-display" class="text-[11px] font-mono font-bold text-slate-400">Loading IST Clock...</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== 4. MAIN OPENSTREETMAP CANVAS ==================== -->
+  <main class="flex-1 relative w-full h-full">
+    <!-- Clean, non-pre-rendered map container for Leaflet -->
+    <div id="main-map"></div>
+
+    <!-- FLOATING "TAKE ME THERE" BUTTON -->
+    <div id="take-me-there-container" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 transition-all duration-300">
+      <button onclick="handleTakeMeThere()" class="take-me-there-btn group">
+        <span>Take me there</span>
+        <i class="fa-solid fa-arrow-right text-sm group-hover:translate-x-1 transition-transform"></i>
+      </button>
+    </div>
+
+    <!-- GOOGLE-MAPS STYLE TURN-BY-TURN HUD -->
+    <div id="nav-guidance-hud" class="hidden absolute top-20 left-4 right-4 md:left-6 md:right-auto md:w-96 z-20 glass-card text-white p-4 rounded-2xl shadow-2xl border border-slate-700 transition-all duration-300 space-y-2.5">
+      <div class="flex items-start justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-lg text-white font-black shrink-0">
+            <i class="fa-solid fa-arrow-turn-up" id="nav-turn-icon"></i>
+          </div>
+          <div>
+            <div class="text-[10px] uppercase font-extrabold text-emerald-400 tracking-wider" id="nav-next-dist">In 25 meters</div>
+            <div class="text-xs font-extrabold leading-tight text-white" id="nav-instruction-text">Proceed along Interstate Concourse Ramp</div>
+          </div>
+        </div>
+        <button onclick="stopNavigation()" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="flex items-center justify-between pt-2 border-t border-slate-800 text-[11px]">
+        <div class="flex items-center gap-1.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+          <span class="font-bold text-slate-300" id="nav-target-name">Bay 12 (Katra Volvo)</span>
+        </div>
+        <span class="font-mono text-emerald-400 font-extrabold" id="nav-eta-badge">ETA: 2 min • 140m</span>
+      </div>
+
+      <!-- Pedestrian Guidance Test Actions -->
+      <div class="grid grid-cols-2 gap-2 pt-1">
+        <button onclick="simulateHumanWalk(false)" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 shadow">
+          <i class="fa-solid fa-person-walking"></i> Walk to Bus
+        </button>
+        <button onclick="simulateHumanWalk(true)" class="bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 shadow animate-pulse">
+          <i class="fa-solid fa-triangle-exclamation"></i> Walk to Metro
+        </button>
+      </div>
+    </div>
+
+    <!-- WRONG DIRECTION WARNING STROBE BANNER -->
+    <div id="wrong-direction-alert" class="hidden fixed top-6 left-1/2 -translate-x-1/2 max-w-2xl w-[92%] z-50 wrong-way-alert-box text-white p-4 rounded-2xl shadow-2xl border-2 flex flex-col md:flex-row items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-xl bg-white text-rose-600 flex items-center justify-center text-2xl font-black shrink-0">
+          <i class="fa-solid fa-triangle-exclamation animate-bounce"></i>
+        </div>
+        <div>
+          <h3 class="text-base font-black font-display tracking-wide text-amber-200">WRONG DIRECTION DETECTED!</h3>
+          <p class="text-xs font-bold leading-relaxed">
+            You are walking into <strong>Metro Gate 1 &amp; 2 (Yellow Line)</strong>! DO NOT SWIPE METRO SMART CARD. 
+            Turn 180° around towards Interstate Concourse Ramp to board your bus.
+          </p>
+        </div>
+      </div>
+      <button onclick="recoverCorrectRoute()" class="bg-white hover:bg-slate-100 text-rose-700 font-black text-xs px-5 py-2.5 rounded-xl shadow-lg uppercase tracking-wider shrink-0 transition-transform active:scale-95">
+        <i class="fa-solid fa-rotate-left mr-1"></i> Reroute to Bus Deck
+      </button>
+    </div>
+
+    <!-- ==================== 5. CROWD CONGESTION ODOMETER PANEL ==================== -->
+    <div id="crowd-sector-panel" class="hidden absolute top-20 right-4 z-20 w-80 md:w-96 glass-card rounded-3xl p-5 border-2 border-emerald-500/50 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-700/80 pb-3">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center justify-center text-base">
+            <i class="fa-solid fa-gauge-high"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-accent font-black tracking-wide text-white">CROWD CONGESTION ODOMETER</h3>
+            <p class="text-[10px] text-slate-400 font-bold">CCTV Density Stream (Live Backend Telemetry)</p>
+          </div>
+        </div>
+        <button onclick="toggleCrowdSector()" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <!-- Sector Selector Dropdown -->
+      <div class="space-y-1">
+        <label class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Select Specified Sector:</label>
+        <select id="crowd-sector-select" onchange="renderOdometerSector(this.value)" class="w-full bg-slate-900 border border-slate-700 text-white rounded-xl p-2.5 text-xs font-bold focus:outline-none focus:border-emerald-500 cursor-pointer">
+          <option value="interstate">ISBT Level 2 Interstate Deck (Bays 1-20)</option>
+          <option value="himachal">Himachal HRTC Wing (Bays 11-15: Katra/Manali)</option>
+          <option value="punjab">Punjab &amp; Haryana Wing (Bays 1-10)</option>
+          <option value="rajasthan">Rajasthan RSRTC Wing (Bays 31-40)</option>
+          <option value="dtc">DTC City Feeder Bus Terminal</option>
+          <option value="metro">Metro Gate 1 &amp; 2 Concourse</option>
+        </select>
+      </div>
+
+      <!-- Live Congestion Odometer Arc Gauge -->
+      <div class="flex flex-col items-center">
+        <div class="relative w-56 h-28 mt-2">
+          <svg viewBox="0 0 100 50" class="w-full h-full overflow-visible">
+            <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#1e293b" stroke-width="14" stroke-linecap="round"></path>
+            <path d="M 10 50 A 40 40 0 0 1 33.5 17.5" fill="none" stroke="#10b981" stroke-width="14" stroke-linecap="round"></path>
+            <path d="M 33.5 17.5 A 40 40 0 0 1 66.5 17.5" fill="none" stroke="#f59e0b" stroke-width="14"></path>
+            <path d="M 66.5 17.5 A 40 40 0 0 1 90 50" fill="none" stroke="#ef4444" stroke-width="14" stroke-linecap="round"></path>
+            <g id="odometer-needle" style="transform: rotate(68deg); transform-origin: 50px 50px; transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);">
+              <polygon points="48,50 52,50 50,11" fill="#ef4444"></polygon>
+              <circle cx="50" cy="50" r="5.5" fill="#ef4444"></circle>
+            </g>
+          </svg>
+        </div>
+        <div id="odometer-label" class="text-rose-500 font-display font-black text-2xl mt-1 tracking-wider italic">HEAVY RUSH</div>
+        <div id="odometer-density-val" class="text-xs font-mono font-bold text-slate-300">88.0% Congestion Level</div>
+      </div>
+
+      <!-- Live Headcount & Flow Metric Box -->
+      <div class="grid grid-cols-2 gap-3 bg-slate-900/90 border border-slate-700/80 p-3 rounded-2xl text-center">
+        <div>
+          <div class="text-[10px] text-slate-400 uppercase font-black">People inside Sector</div>
+          <div id="odometer-headcount" class="text-xl font-display font-black text-emerald-400 mt-0.5">3,842</div>
+        </div>
+        <div class="border-l border-slate-800">
+          <div class="text-[10px] text-slate-400 uppercase font-black">De-Congestion Status</div>
+          <div id="odometer-flow-val" class="text-xs font-mono font-bold text-amber-400 mt-1">Divert via East Ramp</div>
+        </div>
+      </div>
+
+      <p class="text-[11px] text-slate-300 font-semibold leading-relaxed bg-emerald-500/10 border border-emerald-500/30 p-2.5 rounded-xl">
+        <i class="fa-solid fa-circle-info text-emerald-400 mr-1"></i>
+        <span id="odometer-advice-text">High boarding rush detected. Use East Luggage Ramp for 40% smoother pedestrian flow.</span>
+      </p>
+    </div>
+
+    <!-- ==================== 6. BOTTOM TRANSIT HUD ==================== -->
+    <div class="absolute bottom-4 left-4 right-4 md:left-6 md:right-6 z-20 glass-card rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border border-slate-700/80">
+      <div class="flex items-center gap-3.5">
+        <div class="w-12 h-12 rounded-2xl bg-sky-500/20 border border-sky-400/40 text-sky-400 flex items-center justify-center text-2xl font-black">
+          <i class="fa-solid fa-location-arrow"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-base font-extrabold text-white" id="bottom-route-title">Kashmere Gate ➔ Mahipalpur</span>
+            <span class="bg-gradient-to-r from-sky-500 to-teal-500 text-white font-mono font-black text-xs px-2.5 py-0.5 rounded-lg shadow-sm" id="bottom-bus-badge">550</span>
+          </div>
+          <p class="text-xs text-slate-400 font-medium" id="bottom-route-sub">Via Dhaula Kuan &amp; Ring Road • Frequency: 10 min • Fare: ₹25 • Standing at ISBT City Terminal</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <button id="hud-start-nav-btn" onclick="handleTakeMeThere()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow transition-transform active:scale-95 flex items-center gap-1.5">
+          <i class="fa-solid fa-diamond-turn-right"></i> Start Navigation
+        </button>
+        <button onclick="openAllStationsModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs px-3.5 py-2.5 rounded-xl border border-slate-700">
+          <i class="fa-solid fa-bus mr-1"></i> All Stations Directory
+        </button>
+        <button onclick="toggleCrowdSector()" class="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 font-bold text-xs px-3.5 py-2.5 rounded-xl border border-rose-500/40">
+          <i class="fa-solid fa-gauge-high mr-1"></i> Crowd Odometer
+        </button>
+      </div>
+    </div>
+  </main>
+
+
+  <!-- ==================== BUS STATUS MODAL ==================== -->
+  <div id="busStatusModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="glass-card rounded-3xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border-2 border-amber-500/50 text-white">
+
+      <!-- Modal Header -->
+      <div class="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-5 flex items-center justify-between border-b border-amber-500/30 shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 bg-amber-500/20 border border-amber-500/40 text-amber-400 rounded-xl flex items-center justify-center text-xl">
+            <i class="fa-solid fa-bus-simple"></i>
+          </div>
+          <div>
+            <h3 id="bus-status-modal-title" class="text-lg font-accent font-black tracking-wide flex items-center gap-2">
+              <i class="fa-solid fa-signal text-amber-400 text-sm"></i> Bus Status — ISBT Kashmere Gate
+            </h3>
+            <p class="text-xs text-slate-400 font-semibold" id="bus-status-modal-sub">Live Bay, Arrival & Departure Board</p>
+          </div>
+        </div>
+        <button onclick="closeBusStatusModal()" class="text-slate-400 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <!-- Sub-option Tabs -->
+      <div class="px-5 py-3 bg-slate-900/60 border-b border-slate-800 flex gap-2 shrink-0">
+        <button onclick="switchBusStatusTab('bay')" id="bs-tab-bay" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-black text-xs transition-all">
+          <i class="fa-solid fa-map-marker-alt"></i> <span id="bs-tab-bay-label">Bay / Location</span>
+        </button>
+        <button onclick="switchBusStatusTab('arrival')" id="bs-tab-arrival" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs transition-all">
+          <i class="fa-solid fa-plane-arrival"></i> <span id="bs-tab-arrival-label">Arrival Time</span>
+        </button>
+        <button onclick="switchBusStatusTab('departure')" id="bs-tab-departure" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs transition-all">
+          <i class="fa-solid fa-plane-departure"></i> <span id="bs-tab-departure-label">Departure Time</span>
+        </button>
+        <div class="ml-auto flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+          <span class="text-[10px] font-bold text-emerald-400">LIVE</span>
+          <span id="bs-live-clock" class="text-[10px] font-mono font-bold text-slate-400"></span>
+        </div>
+      </div>
+
+      <!-- Search Bar -->
+      <div class="px-5 py-2.5 bg-slate-900/40 border-b border-slate-800 shrink-0">
+        <input type="text" id="bs-search-input" oninput="filterBusStatusTable(this.value)" placeholder="Search bus route, bay, or destination..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-xs font-bold text-white placeholder-slate-500 focus:outline-none focus:border-amber-500">
+      </div>
+
+      <!-- Tab: Bay / Location -->
+      <div id="bs-panel-bay" class="flex-1 overflow-y-auto p-4">
+        <div class="mb-3 text-[11px] text-slate-400 font-semibold flex items-center gap-2">
+          <i class="fa-solid fa-circle-info text-amber-400"></i>
+          Real bay positions based on ISBT Kashmere Gate ground-floor & Level-2 layout (Maharana Pratap ISBT)
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="bs-bay-grid"></div>
+      </div>
+
+      <!-- Tab: Arrival -->
+      <div id="bs-panel-arrival" class="hidden flex-1 overflow-y-auto p-4">
+        <div class="mb-3 text-[11px] text-slate-400 font-semibold flex items-center gap-2">
+          <i class="fa-solid fa-circle-info text-sky-400"></i>
+          Scheduled & estimated arrival times at ISBT Kashmere Gate terminal
+        </div>
+        <div class="overflow-x-auto rounded-2xl border border-slate-700">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="bg-slate-800/90 text-slate-300 uppercase text-[10px] tracking-wider">
+                <th class="p-3 text-left font-black">Route / Bus</th>
+                <th class="p-3 text-left font-black">From</th>
+                <th class="p-3 text-center font-black">Arrival</th>
+                <th class="p-3 text-center font-black">Status</th>
+                <th class="p-3 text-center font-black">Platform</th>
+              </tr>
+            </thead>
+            <tbody id="bs-arrival-tbody" class="divide-y divide-slate-800/80"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab: Departure -->
+      <div id="bs-panel-departure" class="hidden flex-1 overflow-y-auto p-4">
+        <div class="mb-3 text-[11px] text-slate-400 font-semibold flex items-center gap-2">
+          <i class="fa-solid fa-circle-info text-emerald-400"></i>
+          Scheduled departure times from ISBT Kashmere Gate — all operators
+        </div>
+        <div class="overflow-x-auto rounded-2xl border border-slate-700">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="bg-slate-800/90 text-slate-300 uppercase text-[10px] tracking-wider">
+                <th class="p-3 text-left font-black">Route / Bus</th>
+                <th class="p-3 text-left font-black">Destination</th>
+                <th class="p-3 text-center font-black">Departure</th>
+                <th class="p-3 text-center font-black">Status</th>
+                <th class="p-3 text-center font-black">Bay</th>
+              </tr>
+            </thead>
+            <tbody id="bs-departure-tbody" class="divide-y divide-slate-800/80"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-5 py-3 bg-slate-900/80 border-t border-slate-800 shrink-0 flex items-center justify-between gap-3">
+        <p class="text-[10px] text-slate-500 font-semibold">
+          <i class="fa-solid fa-rotate text-amber-400 mr-1"></i>
+          Auto-refreshes every 60 seconds • Timings based on ISBT Kashmere Gate official schedule
+        </p>
+        <button onclick="speakBusStatusSummary()" class="bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-600/40 text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all">
+          <i class="fa-solid fa-volume-high text-emerald-400"></i>
+          <span id="bs-speak-btn-label">Announce Status</span>
+        </button>
+      </div>
+    </div>
+  </div>
+  <!-- ==================== 7. ALL DELHI STATIONS DIRECTORY MODAL ==================== -->
+  <div id="allStationsModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="glass-card rounded-3xl max-w-3xl w-full max-h-[88vh] flex flex-col overflow-hidden shadow-2xl border-2 border-sky-500/40 text-white">
+      <div class="bg-slate-900/90 p-5 flex items-center justify-between border-b border-slate-800">
+        <div>
+          <h3 class="text-lg font-accent font-black tracking-wide flex items-center gap-2">
+            <i class="fa-solid fa-map-location-dot text-sky-400"></i> All Delhi Local, Private &amp; Volvo Bus Stations
+          </h3>
+          <p class="text-xs text-slate-400 font-semibold">Includes ISBTs, Majnu Ka Tila Private Volvo Hub, Dhaula Kuan, DTC &amp; HRTC Terminals</p>
+        </div>
+        <button onclick="closeAllStationsModal()" class="text-slate-400 hover:text-white text-xl"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="px-5 py-2.5 bg-slate-900/60 border-b border-slate-800 flex gap-2 overflow-x-auto text-xs font-bold shrink-0">
+        <button onclick="filterStationList('all')" id="btn-filt-all" class="px-3 py-1.5 rounded-xl bg-sky-600 text-white">All Stations</button>
+        <button onclick="filterStationList('isbt')" id="btn-filt-isbt" class="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300">Major ISBTs</button>
+        <button onclick="filterStationList('private')" id="btn-filt-private" class="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300">Private Volvo Hubs</button>
+        <button onclick="filterStationList('dtc')" id="btn-filt-dtc" class="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300">DTC City Terminals</button>
+      </div>
+
+      <div class="p-5 overflow-y-auto space-y-3" id="stationsListContainer"></div>
+    </div>
+  </div>
+
+  <!-- ==================== 8. HIGHLY RESPONSIVE AI CHATBOT ==================== -->
+  <div id="chat-widget" class="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+    
+    <!-- Chat Window -->
+    <div id="chat-window" class="glass-card border-2 border-emerald-500/60 rounded-3xl shadow-2xl w-96 h-[500px] mb-3 flex flex-col hidden overflow-hidden transition-all duration-300 text-white">
+      <div class="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-4 border-b border-slate-800 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center text-lg">
+            <i class="fa-solid fa-robot"></i>
+          </div>
+          <div>
+            <h3 class="text-sm font-accent font-black tracking-wide">ISBT AI Terminal Companion</h3>
+            <p class="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+              Online • Real Backend NLP Connected
+            </p>
+          </div>
+        </div>
+        <button onclick="toggleChatWindow()" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <!-- Chat Bubbles -->
+      <div id="chat-messages" class="flex-1 p-4 overflow-y-auto space-y-3 text-xs font-semibold">
+        <div id="chat-welcome-bubble" class="bg-slate-800/90 text-slate-200 p-3.5 rounded-2xl rounded-tl-none border border-slate-700/80 leading-relaxed">
+          Namaste! I am your ISBT Kashmere Gate AI Travel Companion. I can answer any doubts about bus bays, private Volvo stations, or how to avoid accidental Metro gates!
+          <br><br>
+          Try asking:
+          <ul class="list-disc pl-4 mt-1.5 space-y-1 text-slate-300 text-[11px]">
+            <li><em>"How do I avoid entering Metro Gate 1 by mistake?"</em></li>
+            <li><em>"Where do private Volvos leave from Majnu Ka Tila?"</em></li>
+            <li><em>"Which platform for Bus 550 to Mahipalpur?"</em></li>
+            <li><em>"Katra Volvo timing and fare"</em></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Quick Shortcuts -->
+      <div class="px-3 py-2 bg-slate-900/80 border-t border-slate-800 flex gap-1.5 overflow-x-auto text-[11px] font-bold shrink-0">
+        <button id="quick-query-metro" onclick="sendQuickQuery('metro')" class="whitespace-nowrap bg-rose-500/20 text-rose-300 border border-rose-500/40 px-2.5 py-1 rounded-xl">⚠️ Avoid Metro Gate</button>
+        <button id="quick-query-majnu" onclick="sendQuickQuery('majnu')" class="whitespace-nowrap bg-purple-500/20 text-purple-300 border border-purple-500/40 px-2.5 py-1 rounded-xl">Majnu Ka Tila</button>
+        <button id="quick-query-550" onclick="sendQuickQuery('550')" class="whitespace-nowrap bg-sky-500/20 text-sky-300 border border-sky-500/40 px-2.5 py-1 rounded-xl">Bus 550 Route</button>
+        <button id="quick-query-katra" onclick="sendQuickQuery('katra')" class="whitespace-nowrap bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2.5 py-1 rounded-xl">Katra Bay 12</button>
+      </div>
+
+      <!-- User Input Row -->
+      <div class="p-3 bg-slate-950/90 border-t border-slate-800 flex items-center gap-2 shrink-0">
+        <button onclick="toggleVoiceInput()" id="mic-btn" class="w-10 h-10 rounded-xl bg-slate-800 text-slate-400 hover:text-emerald-400 flex items-center justify-center transition-all" title="Speech to Text (Mic)">
+          <i class="fa-solid fa-microphone"></i>
+        </button>
+        <input type="text" id="chat-input" placeholder="Ask route, bus, or terminal question..." onkeydown="if(event.key==='Enter') sendChatMessage()" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-emerald-500">
+        <button onclick="sendChatMessage()" class="bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl px-3.5 py-2 text-xs font-bold shadow">
+          <i class="fa-solid fa-paper-plane"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Bottom Right Robot Launcher -->
+    <button onclick="toggleChatWindow()" id="chat-toggle-btn" class="bg-gradient-to-tr from-emerald-500 via-teal-500 to-sky-500 text-white w-16 h-16 rounded-full shadow-2xl flex items-center justify-center text-2xl transition-all hover:scale-110 active:scale-95 border-2 border-white/80" title="Open AI Travel Assistant">
+      <i class="fa-solid fa-robot"></i>
+    </button>
+  </div>
+
+  <!-- ==================== 9. FRONTEND TRANSIT CLIENT ENGINE ==================== -->
+  <script>
+    const COORDS_KASHMERE_GATE = [28.6675, 77.2285];
+    const COORDS_MAHIPALPUR = [28.5435, 77.1275];
+
+    // ==================== STANDALONE FALLBACK DATASETS ====================
+    const DEFAULT_STATIONS = [
+      { id: 'isbt_kg', name: 'ISBT Kashmere Gate (Maharana Pratap)', type: 'isbt', lat: 28.6675, lng: 77.2285, desc: "Asia's largest interstate bus terminus. North, HP, Punjab, Haryana, Rajasthan wings.", buses: 'HRTC, PUNBUS, RSRTC, Haryana Roadways, DTC' },
+      { id: 'isbt_av', name: 'ISBT Anand Vihar (Swami Vivekanand)', type: 'isbt', lat: 28.6495, lng: 77.3150, desc: 'Major East Delhi hub for Uttar Pradesh (UPSRTC) & Uttarakhand (UTC) buses.', buses: 'UPSRTC Janrath, UTC Volvo, DTC Local' },
+      { id: 'isbt_skk', name: 'ISBT Sarai Kale Khan (Vir Haqiqat Rai)', type: 'isbt', lat: 28.5910, lng: 77.2565, desc: 'South-East Delhi hub for Haryana, Agra, Mathura, MP, and Rajasthan.', buses: 'Haryana Roadways, UPSRTC, DTC' },
+      { id: 'pvt_mjt', name: 'Majnu Ka Tila Private Volvo Stand', type: 'private', lat: 28.7015, lng: 77.2280, desc: 'Premier private luxury Volvo hub for Manali, Dharamshala, Kasol, Shimla.', buses: 'Zingbus, IntrCity, Laxmi Holidays, Northern Travels' },
+      { id: 'pvt_dk', name: 'Dhaula Kuan Private Bus Hub', type: 'private', lat: 28.5950, lng: 77.1650, desc: 'Major South-West hub for private buses to Jaipur, Udaipur, Gurgaon, Alwar.', buses: 'RSRTC, Private Volvos, Airport Express' },
+      { id: 'pvt_rka', name: 'RK Ashram Marg / CP Private Volvo Stand', type: 'private', lat: 28.6360, lng: 77.2080, desc: 'Paharganj / Central Delhi hub for long-distance overnight private sleepers.', buses: 'City Land Travels, Zingbus, Royal Safari' },
+      { id: 'pvt_mori', name: 'Mori Gate Private Bus Stand', type: 'private', lat: 28.6635, lng: 77.2210, desc: 'Historical Old Delhi private bus hub near Kashmere Gate for Punjab & Haryana.', buses: 'Private Express Fleet, Tour Coaches' },
+      { id: 'pvt_aksh', name: 'Akshardham / Gazipur Bus Stand', type: 'private', lat: 28.6180, lng: 77.2800, desc: 'Eastern Gateway for Lucknow, Kanpur, Varanasi, Gorakhpur private sleeper coaches.', buses: 'UPSRTC, Royal Cruiser, Private Sleepers' },
+      { id: 'dtc_un', name: 'Uttam Nagar DTC Terminal', type: 'dtc', lat: 28.6210, lng: 77.0600, desc: 'Major West Delhi city terminal connecting routes 753, 883, 721.', buses: 'DTC AC Electric, DIMTS Cluster' },
+      { id: 'dtc_meh', name: 'Mehrauli DTC Bus Terminal', type: 'dtc', lat: 28.5180, lng: 77.1850, desc: 'South Delhi heritage terminal connecting routes 502, 505.', buses: 'DTC Electric Fleet' },
+      { id: 'dtc_bad', name: 'Badarpur Border Bus Terminal', type: 'dtc', lat: 28.4980, lng: 77.3050, desc: 'Border terminal connecting Delhi to Faridabad & Mathura Road routes (405A).', buses: 'DTC Route 405A, 429' },
+      { id: 'dtc_nar', name: 'Narela Bus Terminal', type: 'dtc', lat: 28.8500, lng: 77.0950, desc: 'North Delhi terminal connecting route 193 to Kashmere Gate.', buses: 'DTC CNG Eco & Electric' },
+      { id: 'dtc_np', name: 'Nehru Place Bus Terminal', type: 'dtc', lat: 28.5490, lng: 77.2520, desc: 'Financial district terminal connecting routes across Ring Road.', buses: 'DTC AC Fleet' },
+      { id: 'dtc_mah', name: 'Mahipalpur / IGI Airport T3 Stand', type: 'dtc', lat: 28.5435, lng: 77.1275, desc: 'Airport feeder station for Route 550, 729, and Airport Express.', buses: 'Route 550, DTC Electric AC' }
+    ];
+
+    const DEFAULT_TRANSIT_ROUTES = {
+      mahipalpur: {
+        routeNumber: '550',
+        title: 'Kashmere Gate ➔ Mahipalpur',
+        description: 'Via Dhaula Kuan & Ring Road • Frequency: 10 min • Fare: ₹25 • Standing at ISBT City Terminal',
+        originCoords: [28.6675, 77.2285],
+        destCoords: [28.5435, 77.1275],
+        path: [
+          [28.6675, 77.2285],
+          [28.6550, 77.2340],
+          [28.6400, 77.2400],
+          [28.6280, 77.2450],
+          [28.6100, 77.2450],
+          [28.5900, 77.2400],
+          [28.5720, 77.2350],
+          [28.5700, 77.2100],
+          [28.5800, 77.1850],
+          [28.5950, 77.1650],
+          [28.5650, 77.1450],
+          [28.5435, 77.1275]
+        ]
+      }
+    };
+
+    const DEFAULT_TERMINAL_PATHS = {
+      katra: [
+        [28.6663, 77.2274],
+        [28.6671, 77.2278],
+        [28.6674, 77.2282],
+        [28.6680, 77.2283],
+        [28.6685, 77.2285]
+      ],
+      manali: [
+        [28.6663, 77.2274],
+        [28.6671, 77.2278],
+        [28.6674, 77.2282],
+        [28.6681, 77.2285],
+        [28.6686, 77.2288]
+      ],
+      jaipur: [
+        [28.6663, 77.2274],
+        [28.6671, 77.2278],
+        [28.6674, 77.2282],
+        [28.6680, 77.2280],
+        [28.6684, 77.2280]
+      ],
+      wrong_metro: [
+        [28.6663, 77.2274],
+        [28.6663, 77.2276],
+        [28.6664, 77.2278],
+        [28.6665, 77.2280],
+        [28.6666, 77.2282]
+      ]
+    };
+
+    const DEFAULT_CROWD_TELEMETRY = {
+      interstate: { label: 'HEAVY RUSH', density: 88.0, angle: 68, headcount: 3842, color: 'text-rose-500', advice: 'Heavy rush on Interstate Deck. Divert via East Ramp to avoid concourse queue.' },
+      himachal: { label: 'PEAK BOARDING', density: 94.0, angle: 79, headcount: 1420, color: 'text-rose-500', advice: 'Bays 11-15 boarding Katra and Manali Volvos. High passenger density.' },
+      punjab: { label: 'MODERATE', density: 62.0, angle: 22, headcount: 980, color: 'text-amber-500', advice: 'Bays 1-10 moving smoothly. Normal boarding speed.' },
+      rajasthan: { label: 'NORMAL FLOW', density: 38.0, angle: -22, headcount: 410, color: 'text-emerald-400', advice: 'Bays 31-40 have low congestion. Clear platform access.' },
+      dtc: { label: 'MODERATE', density: 55.0, angle: 9, headcount: 780, color: 'text-amber-500', advice: 'City buses operating on 10-12 min scheduled intervals.' },
+      metro: { label: 'CONCOURSE BOTTLENECK', density: 91.0, angle: 74, headcount: 2150, color: 'text-rose-500', advice: 'Metro Gate 1 & 2 heavily congested. Keep right for bus terminal.' }
+    };
+
+    let stationsCache = [...DEFAULT_STATIONS];
+    let terminalPaths = { ...DEFAULT_TERMINAL_PATHS };
+    let transitRoutesCache = { ...DEFAULT_TRANSIT_ROUTES };
+    let crowdTelemetryCache = { ...DEFAULT_CROWD_TELEMETRY };
+    let currentLocale = 'en-IN';
+
+    let map = null;
+    let currentRouteKey = 'mahipalpur';
+    let isNavigating = false;
+    let isVoiceEnabled = true;
+    let walkingInterval = null;
+    let wrongAlertTriggered = false;
+
+    let routePolyline = null;
+    let routePolylineGlow = null;
+    let originMarker = null;
+    let destMarker = null;
+    let humanAvatarMarker = null;
+    let stationsMarkerGroup = null;
+    let terminalFootprintGroup = null;
+
+    // Real-time clock display
+    function startLiveClock() {
+      setInterval(() => {
+        const now = new Date();
+        const str = now.toLocaleTimeString('en-US', { timeZone: 'Asia/Kolkata', hour12: true });
+        const dateStr = now.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', month: 'short', day: '2-digit' });
+        const el = document.getElementById('clock-live-display');
+        if (el) el.innerText = `${str} • ${dateStr}`;
+      }, 1000);
+    }
+
+    // Initialize Map with OpenStreetMap tiles
+    function initMap() {
+      map = L.map('main-map', {
+        center: [28.6050, 77.1850],
+        zoom: 12,
+        zoomControl: false
+      });
+
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19
+      }).addTo(map);
+
+      stationsMarkerGroup = L.layerGroup().addTo(map);
+      terminalFootprintGroup = L.layerGroup().addTo(map);
+
+      drawTerminalFootprint();
+      renderAllStationMarkers(stationsCache);
+      drawTransitRoute('mahipalpur');
+      renderOdometerSector('interstate');
+    }
+
+    // Load live updates from backend non-blockingly
+    function fetchBackendData() {
+      fetch('/api/stations')
+        .then(r => r.json())
+        .then(stJson => {
+          if (stJson && stJson.success && Array.isArray(stJson.data)) {
+            stationsCache = stJson.data;
+            renderAllStationMarkers(stationsCache);
+          }
+        })
+        .catch(() => {});
+
+      fetch('/api/terminal-paths')
+        .then(r => r.json())
+        .then(pathJson => {
+          if (pathJson && pathJson.success && pathJson.data) {
+            terminalPaths = { ...DEFAULT_TERMINAL_PATHS, ...pathJson.data };
+          }
+        })
+        .catch(() => {});
+
+      fetch('/api/crowd-density')
+        .then(r => r.json())
+        .then(crowdJson => {
+          if (crowdJson && crowdJson.success && crowdJson.data) {
+            crowdTelemetryCache = crowdJson.data;
+            const sectorSelect = document.getElementById('crowd-sector-select');
+            if (sectorSelect) renderOdometerSector(sectorSelect.value);
+          }
+        })
+        .catch(() => {});
+    }
+
+    function renderAllStationMarkers(stations) {
+      if (!stationsMarkerGroup) return;
+      stationsMarkerGroup.clearLayers();
+      stations.forEach(st => {
+        if (st.id === 'isbt_kg') return;
+        const pillClass = st.type === 'isbt' ? 'station-marker-pill isbt' : (st.type === 'private' ? 'station-marker-pill private' : 'station-marker-pill');
+        const icon = L.divIcon({
+          className: '',
+          html: `<div class="${pillClass}">${st.name.split('(')[0]}</div>`,
+          iconSize: [120, 24],
+          iconAnchor: [60, 12]
+        });
+        const m = L.marker([st.lat, st.lng], { icon: icon }).addTo(stationsMarkerGroup);
+        m.bindPopup(`
+          <div class="text-slate-900 text-xs font-bold p-1">
+            <strong class="text-sm block text-sky-700">${st.name}</strong>
+            <p class="text-slate-600 mt-1">${st.desc}</p>
+            <p class="text-emerald-700 mt-1"><strong>Buses:</strong> ${st.buses}</p>
+            <button onclick="navigateToStation('${st.id}')" class="mt-2 w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-1.5 px-3 rounded-lg text-xs shadow">
+              Navigate to this Station
+            </button>
+          </div>
+        `);
+      });
+    }
+
+    function drawTerminalFootprint() {
+      if (!terminalFootprintGroup) return;
+      terminalFootprintGroup.clearLayers();
+
+      const terminalPolygonCoords = [
+        [28.6660, 77.2272],
+        [28.6672, 77.2270],
+        [28.6685, 77.2274],
+        [28.6688, 77.2285],
+        [28.6687, 77.2294],
+        [28.6675, 77.2298],
+        [28.6665, 77.2295],
+        [28.6658, 77.2285]
+      ];
+      L.polygon(terminalPolygonCoords, {
+        color: '#10b981',
+        weight: 2.5,
+        fillColor: '#10b981',
+        fillOpacity: 0.12,
+        dashArray: '6, 6'
+      }).addTo(terminalFootprintGroup);
+
+      // ACCIDENTAL METRO DANGER ZONE (Gates 1 & 2)
+      const metroZone = L.polygon([
+        [28.6661, 77.2275],
+        [28.6668, 77.2275],
+        [28.6668, 77.2283],
+        [28.6661, 77.2283]
+      ], {
+        color: '#ef4444',
+        weight: 3,
+        fillColor: '#ef4444',
+        fillOpacity: 0.28,
+        dashArray: '8, 8'
+      }).addTo(terminalFootprintGroup);
+      metroZone.bindPopup("<b class='text-rose-600'>⚠️ ACCIDENTAL METRO ZONE</b><br>Metro Gates 1 & 2 (Yellow Line Concourse).<br><strong>DO NOT ENTER</strong> if boarding interstate buses!");
+    }
+
+    function drawTransitRoute(routeKey) {
+      currentRouteKey = routeKey;
+
+      if (routePolyline && map.hasLayer(routePolyline)) map.removeLayer(routePolyline);
+      if (routePolylineGlow && map.hasLayer(routePolylineGlow)) map.removeLayer(routePolylineGlow);
+      if (originMarker && map.hasLayer(originMarker)) map.removeLayer(originMarker);
+      if (destMarker && map.hasLayer(destMarker)) map.removeLayer(destMarker);
+      if (humanAvatarMarker && map.hasLayer(humanAvatarMarker)) map.removeLayer(humanAvatarMarker);
+
+      const takeMeThereBtn = document.getElementById('take-me-there-container');
+
+      if (routeKey === 'mahipalpur') {
+        const routeData = transitRoutesCache['mahipalpur'] || DEFAULT_TRANSIT_ROUTES['mahipalpur'];
+
+        routePolyline = L.polyline(routeData.path, {
+          color: '#1e293b',
+          weight: 5,
+          opacity: 0.95,
+          lineCap: 'round',
+          lineJoin: 'round'
+        }).addTo(map);
+
+        routePolylineGlow = L.polyline(routeData.path, {
+          color: '#0284c7',
+          weight: 2.5,
+          opacity: 0.85
+        }).addTo(map);
+
+        const blueIcon = L.divIcon({ className: 'origin-marker-dot', iconSize: [24, 24], iconAnchor: [12, 12] });
+        originMarker = L.marker(COORDS_KASHMERE_GATE, { icon: blueIcon }).addTo(map);
+        originMarker.bindPopup("<b>ISBT Kashmere Gate</b><br>Origin Point");
+
+        const orangeIcon = L.divIcon({
+          className: '',
+          html: '<div class="dest-marker-pin"><i class="fa-solid fa-location-dot"></i></div>',
+          iconSize: [32, 32],
+          iconAnchor: [16, 32]
+        });
+        destMarker = L.marker(COORDS_MAHIPALPUR, { icon: orangeIcon }).addTo(map);
+        destMarker.bindPopup("<b>Mahipalpur Bypass</b><br>Destination: Route 550");
+
+        map.fitBounds(routePolyline.getBounds(), { padding: [80, 80] });
+        if (takeMeThereBtn) takeMeThereBtn.classList.remove('hidden');
+
+        const titleEl = document.getElementById('bottom-route-title');
+        const badgeEl = document.getElementById('bottom-bus-badge');
+        const subEl = document.getElementById('bottom-route-sub');
+        if (titleEl) titleEl.innerText = routeData.title;
+        if (badgeEl) badgeEl.innerText = routeData.routeNumber;
+        if (subEl) subEl.innerText = routeData.description;
+
+        fetch('/api/routes/mahipalpur')
+          .then(r => r.json())
+          .then(json => {
+            if (json && json.success && json.data) {
+              transitRoutesCache['mahipalpur'] = json.data;
+            }
+          })
+          .catch(() => {});
+      } else if (routeKey === 'wrong_metro') {
+        const pts = terminalPaths['wrong_metro'] || DEFAULT_TERMINAL_PATHS['wrong_metro'];
+
+        routePolyline = L.polyline(pts, {
+          color: '#dc2626',
+          weight: 6,
+          opacity: 0.95,
+          dashArray: '8, 8'
+        }).addTo(map);
+
+        routePolylineGlow = L.polyline(pts, { color: '#ef4444', weight: 2.5, opacity: 0.85 }).addTo(map);
+
+        originMarker = L.circleMarker(pts[0], { radius: 8, fillColor: '#0284c7', color: '#ffffff', weight: 3, fillOpacity: 1 }).addTo(map);
+        destMarker = L.circleMarker(pts[pts.length - 1], { radius: 10, fillColor: '#ef4444', color: '#ffffff', weight: 3, fillOpacity: 1 }).addTo(map);
+
+        map.fitBounds(routePolyline.getBounds(), { padding: [80, 80], maxZoom: 18 });
+        if (takeMeThereBtn) takeMeThereBtn.classList.add('hidden');
+
+        const titleEl = document.getElementById('bottom-route-title');
+        const badgeEl = document.getElementById('bottom-bus-badge');
+        const subEl = document.getElementById('bottom-route-sub');
+        if (titleEl) titleEl.innerText = "ISBT Entry ➔ Metro Gate 1 & 2 (Yellow Line)";
+        if (badgeEl) badgeEl.innerText = "WRONG WAY";
+        if (subEl) subEl.innerText = "⚠️ DANGER: Heading towards Metro turnstiles. Turn around to reach Interstate Bus Deck.";
+      } else {
+        const pts = terminalPaths[routeKey] || terminalPaths['katra'] || DEFAULT_TERMINAL_PATHS[routeKey] || DEFAULT_TERMINAL_PATHS['katra'];
+
+        routePolyline = L.polyline(pts, {
+          color: '#059669',
+          weight: 6,
+          opacity: 0.95,
+          dashArray: '10, 8'
+        }).addTo(map);
+
+        routePolylineGlow = L.polyline(pts, { color: '#34d399', weight: 2.5, opacity: 0.85 }).addTo(map);
+
+        originMarker = L.circleMarker(pts[0], { radius: 8, fillColor: '#0284c7', color: '#ffffff', weight: 3, fillOpacity: 1 }).addTo(map);
+        destMarker = L.circleMarker(pts[pts.length - 1], { radius: 10, fillColor: '#10b981', color: '#ffffff', weight: 3, fillOpacity: 1 }).addTo(map);
+
+        map.fitBounds(routePolyline.getBounds(), { padding: [80, 80], maxZoom: 18 });
+        if (takeMeThereBtn) takeMeThereBtn.classList.add('hidden');
+
+        const busInfo = routeKey === 'katra' ? 'Bay 12 (Katra Volvo)' : (routeKey === 'manali' ? 'Bay 14 (Manali HRTC)' : 'Bay 08 (Jaipur)');
+        const titleEl = document.getElementById('bottom-route-title');
+        const badgeEl = document.getElementById('bottom-bus-badge');
+        const subEl = document.getElementById('bottom-route-sub');
+        if (titleEl) titleEl.innerText = `ISBT Entry ➔ ${busInfo}`;
+        if (badgeEl) badgeEl.innerText = "WALK";
+        if (subEl) subEl.innerText = "Turn-by-Turn GPS Wayfinding Active • Avoid Metro Gate 1 & 2";
+      }
+    }
+
+    function handleTakeMeThere() {
+      const takeMeThereBtn = document.getElementById('take-me-there-container');
+      if (takeMeThereBtn) takeMeThereBtn.classList.add('hidden');
+      
+      speakText(getPrompt('navStart'));
+      drawTransitRoute('katra');
+      startNavigationHUD();
+    }
+
+    function startNavigationHUD() {
+      isNavigating = true;
+      const hud = document.getElementById('nav-guidance-hud');
+      if (hud) hud.classList.remove('hidden');
+      const alertEl = document.getElementById('wrong-direction-alert');
+      if (alertEl) alertEl.classList.add('hidden');
+      simulateHumanWalk(false);
+    }
+
+    function stopNavigation() {
+      isNavigating = false;
+      if (walkingInterval) {
+        clearInterval(walkingInterval);
+        walkingInterval = null;
+      }
+      wrongAlertTriggered = false;
+      stopAlarmSiren();
+      stopSpeaking();
+
+      const hud = document.getElementById('nav-guidance-hud');
+      if (hud) hud.classList.add('hidden');
+      const alertEl = document.getElementById('wrong-direction-alert');
+      if (alertEl) alertEl.classList.add('hidden');
+      if (humanAvatarMarker && map.hasLayer(humanAvatarMarker)) {
+        map.removeLayer(humanAvatarMarker);
+      }
+    }
+
+    function simulateHumanWalk(isWrongWayToMetro = false) {
+      if (walkingInterval) {
+        clearInterval(walkingInterval);
+        walkingInterval = null;
+      }
+      wrongAlertTriggered = false;
+      stopAlarmSiren();
+
+      const alertEl = document.getElementById('wrong-direction-alert');
+      if (alertEl) alertEl.classList.add('hidden');
+
+      // Draw the matching route line so the map visually represents the walk
+      drawTransitRoute(isWrongWayToMetro ? 'wrong_metro' : 'katra');
+
+      const waypoints = isWrongWayToMetro 
+        ? (terminalPaths['wrong_metro'] || DEFAULT_TERMINAL_PATHS['wrong_metro'])
+        : (terminalPaths['katra'] || DEFAULT_TERMINAL_PATHS['katra']);
+
+      if (!waypoints || waypoints.length === 0) return;
+
+      let legIndex = 0;
+      let progress = 0;
+
+      const normalAvatarIcon = L.divIcon({
+        className: '',
+        html: '<div class="walking-person-avatar"><i class="fa-solid fa-person-walking"></i></div>',
+        iconSize: [38, 38],
+        iconAnchor: [19, 19]
+      });
+
+      if (!humanAvatarMarker || !map.hasLayer(humanAvatarMarker)) {
+        humanAvatarMarker = L.marker(waypoints[0], { icon: normalAvatarIcon }).addTo(map);
+      } else {
+        humanAvatarMarker.setIcon(normalAvatarIcon);
+        humanAvatarMarker.setLatLng(waypoints[0]);
+      }
+
+      const instEl = document.getElementById('nav-instruction-text');
+      const distEl = document.getElementById('nav-next-dist');
+      const targetEl = document.getElementById('nav-target-name');
+
+      if (isWrongWayToMetro) {
+        if (instEl) instEl.innerText = "⚠️ Simulating wrong turn into Metro Gate 1 subway...";
+        if (distEl) distEl.innerText = "Testing Alert";
+        if (targetEl) targetEl.innerText = "Metro Gate 1 & 2";
+        // NOTE: We do NOT speak navWrongSim to prevent any overlapping speech with the upcoming alert!
+      } else {
+        if (instEl) instEl.innerText = "Proceed along Interstate Concourse Ramp";
+        if (distEl) distEl.innerText = "In 140 meters";
+        if (targetEl) targetEl.innerText = "Bay 12 (Katra Volvo)";
+        speakText(getPrompt('navWalking'));
+      }
+
+      walkingInterval = setInterval(() => {
+        progress += 0.035;
+        if (progress >= 1) {
+          progress = 0;
+          legIndex++;
+          if (legIndex >= waypoints.length - 1) {
+            clearInterval(walkingInterval);
+            walkingInterval = null;
+            if (!isWrongWayToMetro) {
+              speakText(getPrompt('navArrived'));
+              if (instEl) instEl.innerText = "Arrived at Departure Bay 12!";
+              if (distEl) distEl.innerText = "0 meters";
+            }
+            return;
+          }
+        }
+
+        const p1 = waypoints[legIndex];
+        const p2 = waypoints[legIndex + 1];
+        const currentLat = p1[0] + (p2[0] - p1[0]) * progress;
+        const currentLng = p1[1] + (p2[1] - p1[1]) * progress;
+        humanAvatarMarker.setLatLng([currentLat, currentLng]);
+
+        if (!isWrongWayToMetro) {
+          const remainingDist = Math.max(10, Math.round((waypoints.length - 1 - legIndex - progress) * 35));
+          if (distEl) distEl.innerText = `In ${remainingDist} meters`;
+          if (instEl) {
+            if (legIndex === 0) instEl.innerText = "Proceed along Interstate Concourse Ramp";
+            else if (legIndex === 1) instEl.innerText = "Follow green overhead signs for Interstate Bus Decks";
+            else if (legIndex === 2) instEl.innerText = "Keep right towards Level 2 (Bays 1-42)";
+            else instEl.innerText = "Approaching Bay 12 (Katra Volvo Boarding)";
+          }
+        } else {
+          if (instEl && legIndex === 1) {
+            instEl.innerText = "⚠️ Walking into underground Yellow Line subway corridor...";
+          }
+        }
+
+        // Trigger alert only after the user visibly sees the avatar walking towards Metro (at legIndex >= 2)
+        if (isWrongWayToMetro && !wrongAlertTriggered && (legIndex >= 2 || (legIndex === 1 && progress > 0.6))) {
+          wrongAlertTriggered = true;
+          clearInterval(walkingInterval);
+          walkingInterval = null;
+          triggerWrongWayAlert();
+        }
+      }, 65);
+    }
+
+    function triggerWrongWayAlert() {
+      const alertEl = document.getElementById('wrong-direction-alert');
+      if (alertEl) alertEl.classList.remove('hidden');
+
+      const avatarDangerIcon = L.divIcon({
+        className: '',
+        html: '<div class="walking-person-avatar danger"><i class="fa-solid fa-triangle-exclamation"></i></div>',
+        iconSize: [40, 40],
+        iconAnchor: [20, 20]
+      });
+      if (humanAvatarMarker) humanAvatarMarker.setIcon(avatarDangerIcon);
+
+      const instEl = document.getElementById('nav-instruction-text');
+      const distEl = document.getElementById('nav-next-dist');
+      if (instEl) instEl.innerText = "⚠️ STOP! You are walking into Metro Gate 1! Turn 180° around!";
+      if (distEl) distEl.innerText = "WRONG WAY";
+
+      playAlarmSiren();
+      speakText(getPrompt('navWrongAlert'));
+    }
+
+    function recoverCorrectRoute() {
+      stopAlarmSiren();
+      const alertEl = document.getElementById('wrong-direction-alert');
+      if (alertEl) alertEl.classList.add('hidden');
+      wrongAlertTriggered = false;
+
+      speakText(getPrompt('navRecovered'));
+      simulateHumanWalk(false);
+    }
+
+    let currentSirenCtx = null;
+    let currentSirenGain = null;
+
+    function stopAlarmSiren() {
+      if (currentSirenGain && currentSirenCtx) {
+        try {
+          currentSirenGain.gain.setValueAtTime(0, currentSirenCtx.currentTime);
+          currentSirenCtx.close();
+        } catch (e) {}
+      }
+      currentSirenGain = null;
+      currentSirenCtx = null;
+    }
+
+    function playAlarmSiren() {
+      try {
+        stopAlarmSiren();
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        currentSirenCtx = audioCtx;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        currentSirenGain = gain;
+
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(650, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(950, audioCtx.currentTime + 0.18);
+        osc.frequency.exponentialRampToValueAtTime(650, audioCtx.currentTime + 0.36);
+
+        gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.45);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.45);
+
+        setTimeout(() => {
+          stopAlarmSiren();
+        }, 500);
+      } catch (e) {}
+    }
+
+    // ==================== MULTILINGUAL I18N DICTIONARY ====================
+    const I18N_PROMPTS = {
+      hi: {
+        langConfirmed: (name) => `भाषा चुनी गई: ${name}। आईएसबीटी कश्मीरी गेट टर्मिनल नेविगेशन में आपका स्वागत है।`,
+        navStart: "नेविगेशन शुरू हो गया है। आईएसबीटी कश्मीरी गेट टर्मिनल में आपका स्वागत है।",
+        navWalking: "नेविगेशन मार्गदर्शन सक्रिय है। अपनी बस की ओर स्वाभाविक गति से चलें।",
+        navWrongSim: "मेट्रो गेट 1 की ओर जाने का अनुकरण किया जा रहा है।",
+        navWrongAlert: "सावधान! आप गलत दिशा में मेट्रो गेट 1 की ओर जा रहे हैं। कृपया 180 डिग्री मुड़ें और इंटरस्टेट बस डेक की ओर जाएं!",
+        navRecovered: "मार्ग पुनः प्राप्त हुआ। आपको वापस इंटरस्टेट बस कॉनकोर्स की ओर ले जाया जा रहा है।",
+        navArrived: "बधाई हो! आप अपने बस प्लेटफॉर्म पर पहुँच चुके हैं!",
+        navPlotting: (name) => `${name} के लिए नेविगेशन मार्ग तैयार किया जा रहा है।`,
+        chatGreetingHTML: `नमस्ते! मैं आपका आईएसबीटी कश्मीरी गेट एआई यात्रा सहायक हूँ। बस बे, प्राइवेट वोल्वो स्टैंड या मेट्रो गेट से बचने के बारे में आप मुझसे कुछ भी पूछ सकते हैं!<br><br>सुझाव:<ul class="list-disc pl-4 mt-1.5 space-y-1 text-slate-300 text-[11px]"><li><em>"मेट्रो गेट 1 से गलती से कैसे बचें?"</em></li><li><em>"मजनू का टीला वोल्वो स्टैंड कहाँ है?"</em></li><li><em>"महिपालपुर के लिए बस 550 किस प्लेटफॉर्म से मिलेगी?"</em></li><li><em>"कटरा वोल्वो बस समय और किराया"</em></li></ul>`,
+        chatPlaceholder: "रूट, बस या टर्मिनल के बारे में पूछें...",
+        quickMetro: "⚠️ मेट्रो गेट से बचें",
+        quickMajnu: "मजनू का टीला",
+        quick550: "बस 550 रूट",
+        quickKatra: "कटरा बे 12",
+        btnCrowd: "भीड़ मीटर",
+        btnAllStations: "सभी दिल्ली स्टेशन",
+        btnStartNav: "नेविगेशन शुरू करें",
+        searchPlaceholder: "किसी भी स्टेशन या बस को खोजें... (उदा. मजनू का टीला, 550, कटरा)"
+      },
+      pa: {
+        langConfirmed: (name) => `ਭਾਸ਼ਾ ਚੁਣੀ ਗਈ: ${name}। ਆਈ.ਐਸ.ਬੀ.ਟੀ. ਕਸ਼ਮੀਰੀ ਗੇਟ ਟਰਮੀਨਲ ਨੈਵੀਗੇਸ਼ਨ ਵਿੱਚ ਸੁਆਗਤ ਹੈ।`,
+        navStart: "ਨੈਵੀਗੇਸ਼ਨ ਸ਼ੁਰੂ ਹੋ ਗਿਆ ਹੈ। ਕਸ਼ਮੀਰੀ ਗੇਟ ਟਰਮੀਨਲ ਵਿੱਚ ਸੁਆਗਤ ਹੈ।",
+        navWalking: "ਨੈਵੀਗੇਸ਼ਨ ਸਰਗਰਮ ਹੈ। ਆਪਣੀ ਬੱਸ ਵੱਲ ਕੁਦਰਤੀ ਰਫ਼ਤਾਰ ਨਾਲ ਚੱਲੋ।",
+        navWrongSim: "ਮੈਟਰੋ ਗੇਟ 1 ਵੱਲ ਜਾਣ ਦਾ ਸਿਮੂਲੇਸ਼ਨ।",
+        navWrongAlert: "ਸਾਵਧਾਨ! ਤੁਸੀਂ ਗਲਤ ਦਿਸ਼ਾ ਵਿੱਚ ਮੈਟਰੋ ਗੇਟ 1 ਵੱਲ ਜਾ ਰਹੇ ਹੋ। ਕਿਰਪਾ ਕਰਕੇ 180 ਡਿਗਰੀ ਮੁੜੋ ਅਤੇ ਬੱਸ ਡੈੱਕ ਵੱਲ ਜਾਓ!",
+        navRecovered: "ਰੂਟ ਮੁੜ ਪ੍ਰਾਪਤ ਹੋਇਆ। ਇੰਟਰਸਟੇਟ ਕਾਨਕੋਰਸ ਵੱਲ ਲਿਜਾਇਆ ਜਾ ਰਿਹਾ ਹੈ।",
+        navArrived: "ਵਧਾਈਆਂ! ਤੁਸੀਂ ਆਪਣੇ ਬੱਸ ਪਲੇਟਫਾਰਮ 'ਤੇ ਪਹੁੰਚ ਗਏ ਹੋ!",
+        navPlotting: (name) => `${name} ਲਈ ਰੂਟ ਤਿਆਰ ਕੀਤਾ ਜਾ ਰਿਹਾ ਹੈ।`,
+        chatGreetingHTML: `ਸਤਿ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਤੁਹਾਡਾ ਆਈ.ਐਸ.ਬੀ.ਟੀ. ਟਰਮੀਨਲ ਸਹਾਇਕ ਹਾਂ। ਬੱਸ ਪਲੇਟਫਾਰਮ, ਵੋਲਵੋ ਜਾਂ ਰੂਟ ਬਾਰੇ ਪੁੱਛੋ।`,
+        chatPlaceholder: "ਬੱਸ ਜਾਂ ਟਰਮੀਨਲ ਬਾਰੇ ਪੁੱਛੋ...",
+        quickMetro: "⚠️ ਮੈਟਰੋ ਗੇਟ ਤੋਂ ਬਚੋ",
+        quickMajnu: "ਮਜਨੂੰ ਕਾ ਟੀਲਾ",
+        quick550: "ਬੱਸ 550 ਰੂਟ",
+        quickKatra: "ਕਟੜਾ ਬੇਅ 12",
+        btnCrowd: "ਭੀੜ ਮੀਟਰ",
+        btnAllStations: "ਸਾਰੇ ਸਟੇਸ਼ਨ",
+        btnStartNav: "ਨੈਵੀਗੇਸ਼ਨ ਸ਼ੁਰੂ ਕਰੋ",
+        searchPlaceholder: "ਕੋਈ ਵੀ ਸਟੇਸ਼ਨ ਜਾਂ ਬੱਸ ਲੱਭੋ..."
+      },
+      bn: {
+        langConfirmed: (name) => `ভাষা নির্বাচিত: ${name}। আইএসবিটি কাশ্মীরি গেট নেভিগেশনে স্বাগতম।`,
+        navStart: "নেভিগেশন শুরু হয়েছে। কাশ্মীরি গেট টার্মিনালে স্বাগতম।",
+        navWalking: "নেভিগেশন নির্দেশিকা সক্রিয়। আপনার বাসের দিকে হাঁটুন।",
+        navWrongSim: "মেট্রো গেট ১ এর দিকে হাঁটার সিমুলেশন।",
+        navWrongAlert: "সাবধান! আপনি ভুল দিকে মেট্রো গেট ১ এর দিকে যাচ্ছেন। অনুগ্রহ করে ১৮০ ডিগ্রি ঘুরে বাস ডেকে যান!",
+        navRecovered: "রুট পুনরুদ্ধার করা হয়েছে। কনকোর্সে ফিরিয়ে নেওয়া হচ্ছে।",
+        navArrived: "অভিনন্দন! আপনি আপনার বাস প্ল্যাটফর্মে পৌঁছে গেছেন!",
+        navPlotting: (name) => `${name} এর জন্য রুট তৈরি করা হচ্ছে।`,
+        chatGreetingHTML: `নমস্কার! আমি আপনার আইএসবিটি এআই সহায়ক। বাস বে বা রুট সম্পর্কে আমাকে জিজ্ঞাসা করুন।`,
+        chatPlaceholder: "বাস বা টার্মিনাল সম্পর্কে জিজ্ঞাসা করুন...",
+        quickMetro: "⚠️ মেট্রো গেট এড়ান",
+        quickMajnu: "মজনু কা টিলা",
+        quick550: "বাস ৫৫০ রুট",
+        quickKatra: "কাটরা বে ১২",
+        btnCrowd: "ভিড় মিটার",
+        btnAllStations: "সমস্ত স্টেশন",
+        btnStartNav: "নেভিগেশন শুরু করুন",
+        searchPlaceholder: "বাস বা স্টেশন খুঁজুন..."
+      },
+      mr: {
+        langConfirmed: (name) => `भाषा निवडली: ${name}। आयएसबीटी काश्मिरी गेट नेव्हिगेशनमध्ये आपले स्वागत आहे।`,
+        navStart: "नेव्हिगेशन सुरू झाले आहे. आयएसबीटी काश्मिरी गेटमध्ये आपले स्वागत आहे.",
+        navWalking: "मार्गदर्शन सक्रिय आहे. आपल्या बसच्या दिशेने चालत राहा.",
+        navWrongSim: "मेट्रो गेट १ कडे जाण्याचे सिम्युलेशन.",
+        navWrongAlert: "सावधान! आपण चुकीच्या दिशेने मेट्रो गेट १ कडे जात आहात. कृपया १८० अंश वळून बस डेककडे जा!",
+        navRecovered: "मार्ग पूर्ववत झाला आहे. कॉनकोर्सकडे नेले जात आहे.",
+        navArrived: "अभिनंदन! आपण आपल्या बस प्लॅटफॉर्मवर पोहोचला आहात!",
+        navPlotting: (name) => `${name} साठी मार्ग तयार केला जात आहे।`,
+        chatGreetingHTML: `नमस्कार! मी आपला आयएसबीटी प्रवासी सहाय्यक आहे. बस प्लॅटफॉर्म किंवा मार्गाबद्दल काहीही विचारा!`,
+        chatPlaceholder: "बस किंवा स्थानकाबद्दल विचारा...",
+        quickMetro: "⚠️ मेट्रो गेट टाळा",
+        quickMajnu: "मजनू का टीला",
+        quick550: "बस ५५० मार्ग",
+        quickKatra: "कटरा बे १२",
+        btnCrowd: "गर्दी मीटर",
+        btnAllStations: "सर्व दिल्ली स्थानके",
+        btnStartNav: "नेव्हिगेशन सुरू करा",
+        searchPlaceholder: "स्थानक किंवा बस शोधा..."
+      },
+      ta: {
+        langConfirmed: (name) => `மொழி உறுதிப்படுத்தப்பட்டது: ${name}. ஐஎஸ்பிடி வழிசெலுத்தலுக்கு வரவேற்கிறோம்.`,
+        navStart: "வழிசெலுத்தல் தொடங்கப்பட்டது. காஷ்மீரி கேட் முனையத்திற்கு வரவேற்கிறோம்.",
+        navWalking: "வழிகாட்டுதல் இயக்கத்தில் உள்ளது. உங்கள் பேருந்தை நோக்கி நடக்கவும்.",
+        navWrongSim: "மெட்ரோ கேட் 1 நோக்கி நடக்கும் மாதிரி.",
+        navWrongAlert: "எச்சரிக்கை! நீங்கள் தவறான திசையில் மெட்ரோ கேட் 1 நோக்கி செல்கிறீர்கள். 180 டிகிரி திரும்பி பேருந்து தளத்திற்கு செல்லவும்!",
+        navRecovered: "பாதை மீட்கப்பட்டது. பேருந்து வளாகத்திற்கு வழிகாட்டப்படுகிறது.",
+        navArrived: "நீங்கள் உங்கள் பேருந்து தளத்தை அடைந்துவிட்டீர்கள்!",
+        navPlotting: (name) => `${name} க்கான பாதை திட்டமிடப்படுகிறது.`,
+        chatGreetingHTML: `வணக்கம்! நான் உங்கள் ஐஎஸ்பிடி பயண உதவியாளர். பேருந்து தளம் அல்லது வழிகள் பற்றி கேளுங்கள்!`,
+        chatPlaceholder: "பேருந்து அல்லது முனையம் பற்றி கேளுங்கள்...",
+        quickMetro: "⚠️ மெட்ரோ கேட் தவிர்",
+        quickMajnu: "மஜ்னு கா திலா",
+        quick550: "பேருந்து 550 வழி",
+        quickKatra: "கத்ரா பே 12",
+        btnCrowd: "கூட்ட மீட்டர்",
+        btnAllStations: "அனைத்து நிலையங்கள்",
+        btnStartNav: "வழிசெலுத்தல் தொடங்கு",
+        searchPlaceholder: "நிலையம் அல்லது பேருந்தை தேடுங்கள்..."
+      },
+      te: {
+        langConfirmed: (name) => `భాష ఎంపికైంది: ${name}. ఐఎస్బీటీ కాశ్మీరీ గేట్ నావిగేషన్‌కు స్వాగతం.`,
+        navStart: "నావిగేషన్ ప్రారంభమైంది. కాశ్మీరీ గేట్ టెర్మినల్‌కు స్వాగతం.",
+        navWalking: "మార్గదర్శనం ప్రారంభమైంది. మీ బస్సు వైపు నడవండి.",
+        navWrongSim: "మెట్రో గేట్ 1 వైపు నడక అనుకరణ.",
+        navWrongAlert: "హెచ్చరిక! మీరు తప్పుడు దిశలో మెట్రో గేట్ 1 వైపు వెళ్తున్నారు. 180 డిగ్రీలు వెనక్కి తిరిగి బస్సు డెక్‌కు వెళ్లండి!",
+        navRecovered: "మార్గం పునరుద్ధరించబడింది. బస్సు కాన్‌కోర్స్ వైపు దారి చూపిస్తున్నాం.",
+        navArrived: "మీరు మీ బస్సు ప్లాట్‌ఫారమ్‌కు చేరుకున్నారు!",
+        navPlotting: (name) => `${name} కోసం మార్గం సిద్ధం చేయబడుతోంది.`,
+        chatGreetingHTML: `నమస్కారం! నేను మీ ఐఎస్బీటీ ప్రయాణ సహాయకుడిని. బస్సు బే లేదా మార్గాల గురించి అడగండి!`,
+        chatPlaceholder: "బస్సు లేదా టెర్మినల్ గురించి అడగండి...",
+        quickMetro: "⚠️ మెట్రో గేట్ నివారించండి",
+        quickMajnu: "మజ్ను కా తిలా",
+        quick550: "బస్సు 550 రూట్",
+        quickKatra: "కత్రా బే 12",
+        btnCrowd: "రద్దీ మీటర్",
+        btnAllStations: "అన్ని ఢిల్లీ స్టేషన్లు",
+        btnStartNav: "నావిగేషన్ ప్రారంభించండి",
+        searchPlaceholder: "స్టేషన్ లేదా బస్సు కోసం శోధించండి..."
+      },
+      gu: {
+        langConfirmed: (name) => `ભાષા પસંદ થઈ: ${name}. આઈએસબીટી કાશ્મીરી ગેટ નેવિગેશનમાં આપનું સ્વાગત છે.`,
+        navStart: "નેવિગેશન શરૂ થયું છે. કાશ્મીરી ગેટ ટર્મિનલમાં આપનું સ્વાગત છે.",
+        navWalking: "નેવિગેશન સક્રિય છે. તમારી બસ તરફ ચાલો.",
+        navWrongSim: "મેટ્રો ગેટ 1 તરફ ચાલવાનું સિમ્યુલેશન.",
+        navWrongAlert: "સાવધાન! તમે ખોટી દિશામાં મેટ્રો ગેટ 1 તરફ જઈ રહ્યા છો. કૃપા કરીને 180 ડિગ્રી પાછા વળી બસ ડેક તરફ જાઓ!",
+        navRecovered: "રૂટ ફરી પ્રાપ્ત થયો. ઇન્ટરસ્ટેટ કોનકોર્સ તરફ માર્ગદર્શન આપવામાં આવી રહ્યું છે.",
+        navArrived: "અભિનંદન! તમે તમારા બસ પ્લેટફોર્મ પર પહોંચી ગયા છો!",
+        navPlotting: (name) => `${name} માટે રૂટ તૈયાર થઈ રહ્યો છે.`,
+        chatGreetingHTML: `નમસ્તે! હું તમારો આઈએસબીટી સહાયક છું. બસ પ્લેટફોર્મ કે રૂટ વિશે પૂછી શકો છો!`,
+        chatPlaceholder: "બસ કે સ્ટેશન વિશે પૂછો...",
+        quickMetro: "⚠️ મેટ્રો ગેટ ટાળો",
+        quickMajnu: "મજનૂ કા ટીલા",
+        quick550: "બસ 550 રૂટ",
+        quickKatra: "કટરા બે 12",
+        btnCrowd: "ભીડ મીટર",
+        btnAllStations: "બધા દિલ્હી સ્ટેશનો",
+        btnStartNav: "નેવિગેશન શરૂ કરો",
+        searchPlaceholder: "સ્ટેશન અથવા બસ શોધો..."
+      },
+      ur: {
+        langConfirmed: (name) => `زبان منتخب کی گئی: ${name}۔ آئی ایس بی ٹی کشمیری گیٹ نیویگیشن میں خوش آمدید۔`,
+        navStart: "نیویگیشن شروع ہو گئی ہے۔ کشمیری گیٹ ٹرمینل میں خوش آمدید۔",
+        navWalking: "رہنمائی فعال ہے۔ اپنی بس کی طرف فطری رفتار سے چلیں۔",
+        navWrongSim: "میٹرو گیٹ 1 کی طرف جانے کی نقل۔",
+        navWrongAlert: "خبردار! آپ غلط سمت میں میٹرو گیٹ 1 کی طرف جا رہے ہیں۔ براہ کرم 180 ڈگری مڑیں اور بس ڈیک کی طرف جائیں!",
+        navRecovered: "راستہ بحال ہو گیا۔ بس کونکورس کی طرف رہنمائی کی جا رہی ہے۔",
+        navArrived: "مبارک ہو! آپ اپنے بس پلیٹ فارم پر پہنچ گئے ہیں۔",
+        navPlotting: (name) => `${name} کے لیے راستہ تیار کیا جا رہا ہے۔`,
+        chatGreetingHTML: `خوش آمدید! میں آپ کا آئی ایس بی ٹی سفری معاون ہوں۔ بس بے یا روٹ کے بارے میں پوچھیں۔`,
+        chatPlaceholder: "بس یا ٹرمینل کے بارے میں پوچھیں...",
+        quickMetro: "⚠️ میٹرو گیٹ سے بچیں",
+        quickMajnu: "مجنوں کا ٹیلا",
+        quick550: "بس 550 روٹ",
+        quickKatra: "کٹرا بے 12",
+        btnCrowd: "بھیڑ میٹر",
+        btnAllStations: "تمام دہلی اسٹیشن",
+        btnStartNav: "نیویگیشن شروع کریں",
+        searchPlaceholder: "اسٹیشن یا بس تلاش کریں..."
+      },
+      fr: {
+        langConfirmed: (name) => `Langue confirmée : ${name}. Prêt pour la navigation du terminal ISBT Kashmere Gate.`,
+        navStart: "Navigation activée. Bienvenue au terminal ISBT Kashmere Gate.",
+        navWalking: "Guidage pas à pas actif. Marchez vers votre quai.",
+        navWrongSim: "Simulation de marche vers la porte de métro 1.",
+        navWrongAlert: "Alerte ! Vous allez dans la mauvaise direction vers la porte 1 du métro. Faites demi-tour à 180° !",
+        navRecovered: "Itinéraire rétabli. Retour vers le hall des bus.",
+        navArrived: "Vous êtes arrivé à votre quai de départ !",
+        navPlotting: (name) => `Calcul de l'itinéraire vers ${name}.`,
+        chatGreetingHTML: `Bonjour ! Je suis votre assistant de voyage IA pour l'ISBT Kashmere Gate. Posez-moi vos questions !`,
+        chatPlaceholder: "Posez votre question sur les bus ou quais...",
+        quickMetro: "⚠️ Éviter le métro",
+        quickMajnu: "Majnu Ka Tila",
+        quick550: "Ligne 550",
+        quickKatra: "Katra Quai 12",
+        btnCrowd: "Affluence",
+        btnAllStations: "Toutes les gares",
+        btnStartNav: "Démarrer",
+        searchPlaceholder: "Rechercher une station ou un bus..."
+      },
+      es: {
+        langConfirmed: (name) => `Idioma confirmado: ${name}. Navegación del terminal ISBT Kashmere Gate lista.`,
+        navStart: "Navegación activada. Bienvenido al terminal ISBT Kashmere Gate.",
+        navWalking: "Guía paso a paso activa. Caminando hacia su autobús.",
+        navWrongSim: "Simulación de caminata hacia la Puerta 1 del Metro.",
+        navWrongAlert: "¡Alerta! Va en dirección incorrecta hacia la Puerta 1 del Metro. ¡Gire 180° hacia la terminal de autobuses!",
+        navRecovered: "Ruta recuperada. Guiándole de vuelta al vestíbulo de autobuses.",
+        navArrived: "¡Ha llegado a su andén de salida!",
+        navPlotting: (name) => `Trazando ruta de navegación hacia ${name}.`,
+        chatGreetingHTML: `¡Hola! Soy tu asistente de viaje con IA para ISBT Kashmere Gate. ¡Pregúntame sobre andenes o rutas!`,
+        chatPlaceholder: "Pregunta sobre rutas, autobuses o andenes...",
+        quickMetro: "⚠️ Evitar el metro",
+        quickMajnu: "Majnu Ka Tila",
+        quick550: "Ruta 550",
+        quickKatra: "Katra Andén 12",
+        btnCrowd: "Congestión",
+        btnAllStations: "Todas las estaciones",
+        btnStartNav: "Iniciar navegación",
+        searchPlaceholder: "Buscar cualquier estación o autobús..."
+      },
+      de: {
+        langConfirmed: (name) => `Sprache bestätigt: ${name}. Terminal-Navigation ISBT Kashmere Gate bereit.`,
+        navStart: "Navigation gestartet. Willkommen am Terminal ISBT Kashmere Gate.",
+        navWalking: "Schritt-für-Schritt-Führung aktiv. Gehen Sie in normalem Tempo zu Ihrem Bus.",
+        navWrongSim: "Simulation des Fußwegs zum Metro-Tor 1.",
+        navWrongAlert: "Achtung! Sie gehen in die falsche Richtung zum Metro-Tor 1. Bitte um 180° umdrehen!",
+        navRecovered: "Route wiederhergestellt. Führung zurück zur Bushalle.",
+        navArrived: "Sie haben Ihren Bussteig erreicht!",
+        navPlotting: (name) => `Navigation nach ${name} wird berechnet.`,
+        chatGreetingHTML: `Guten Tag! Ich bin Ihr KI-Reiseassistent für das Terminal ISBT Kashmere Gate. Fragen Sie mich gerne!`,
+        chatPlaceholder: "Fragen Sie nach Routen, Bussen oder Bussteigen...",
+        quickMetro: "⚠️ Metro meiden",
+        quickMajnu: "Majnu Ka Tila",
+        quick550: "Bus 550 Route",
+        quickKatra: "Katra Bussteig 12",
+        btnCrowd: "Stau-Odometer",
+        btnAllStations: "Alle Stationen",
+        btnStartNav: "Navigation starten",
+        searchPlaceholder: "Beliebige Station oder Bus suchen..."
+      },
+      en: {
+        langConfirmed: (name) => `Language confirmed: ${name}. ISBT Kashmere Gate terminal navigation ready.`,
+        navStart: "Take me there activated. Entering ISBT Kashmere Gate terminal navigation.",
+        navWalking: "Turn-by-turn guidance active. Walking at natural pace towards your bus.",
+        navWrongSim: "Simulating walking toward Metro Gate 1.",
+        navWrongAlert: "Alert! You are going in the wrong direction into Metro Gate 1. Turn around 180 degrees towards the Interstate Bus Deck!",
+        navRecovered: "Route recovered. Guiding you back to Interstate Concourse.",
+        navArrived: "You have arrived at your bus platform!",
+        navPlotting: (name) => `Plotting navigation route to ${name}.`,
+        chatGreetingHTML: `Namaste! I am your ISBT Kashmere Gate AI Travel Companion. I can answer any doubts about bus bays, private Volvo stations, or how to avoid accidental Metro gates!<br><br>Try asking:<ul class="list-disc pl-4 mt-1.5 space-y-1 text-slate-300 text-[11px]"><li><em>"How do I avoid entering Metro Gate 1 by mistake?"</em></li><li><em>"Where do private Volvos leave from Majnu Ka Tila?"</em></li><li><em>"Which platform for Bus 550 to Mahipalpur?"</em></li><li><em>"Katra Volvo timing and fare"</em></li></ul>`,
+        chatPlaceholder: "Ask route, bus, or terminal question...",
+        quickMetro: "⚠️ Avoid Metro Gate",
+        quickMajnu: "Majnu Ka Tila",
+        quick550: "Bus 550 Route",
+        quickKatra: "Katra Bay 12",
+        btnCrowd: "Crowd Odometer",
+        btnAllStations: "All Delhi Stations",
+        btnStartNav: "Start Navigation",
+        searchPlaceholder: "Search any station or bus... (e.g. Majnu Ka Tila, 550, Katra, Anand Vihar)"
+      }
+    };
+
+    function getPrompt(key, ...args) {
+      const langKey = (currentLocale || 'en').split('-')[0].toLowerCase();
+      const pack = I18N_PROMPTS[langKey] || I18N_PROMPTS['en'];
+      const val = pack[key] !== undefined ? pack[key] : I18N_PROMPTS['en'][key];
+      if (typeof val === 'function') {
+        return val(...args);
+      }
+      return val;
+    }
+
+    function updateUILanguage(locale) {
+      const langNamesMap = {
+        'en-IN': '🇬🇧 English',
+        'hi-IN': '🇮🇳 हिन्दी',
+        'en': '🇬🇧 English',
+        'hi': '🇮🇳 हिन्दी'
+      };
+
+      const headerLangEl = document.getElementById('header-lang-display');
+      if (headerLangEl) headerLangEl.innerText = langNamesMap[locale] || locale;
+
+      const chatInput = document.getElementById('chat-input');
+      if (chatInput) chatInput.placeholder = getPrompt('chatPlaceholder');
+
+      const welcomeBubble = document.getElementById('chat-welcome-bubble');
+      if (welcomeBubble) welcomeBubble.innerHTML = getPrompt('chatGreetingHTML');
+
+      const btnMetro = document.getElementById('quick-query-metro');
+      if (btnMetro) btnMetro.innerText = getPrompt('quickMetro');
+      const btnMajnu = document.getElementById('quick-query-majnu');
+      if (btnMajnu) btnMajnu.innerText = getPrompt('quickMajnu');
+      const btn550 = document.getElementById('quick-query-550');
+      if (btn550) btn550.innerText = getPrompt('quick550');
+      const btnKatra = document.getElementById('quick-query-katra');
+      if (btnKatra) btnKatra.innerText = getPrompt('quickKatra');
+
+      const btnCrowd = document.getElementById('header-crowd-btn-text');
+      if (btnCrowd) btnCrowd.innerText = getPrompt('btnCrowd');
+      const btnStations = document.getElementById('header-stations-btn-text');
+      if (btnStations) btnStations.innerText = getPrompt('btnAllStations');
+      const btnStartNav = document.getElementById('hud-start-nav-btn');
+      if (btnStartNav) btnStartNav.innerHTML = `<i class="fa-solid fa-diamond-turn-right"></i> ${getPrompt('btnStartNav')}`;
+
+      const searchInput = document.getElementById('universalSearchInput');
+      if (searchInput) searchInput.placeholder = getPrompt('searchPlaceholder');
+      // Update Bus Status button label
+      updateBusStatusLangUI();
+    }
+
+    let speechVoices = [];
+
+    function loadVoices() {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        speechVoices = window.speechSynthesis.getVoices() || [];
+      }
+    }
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      loadVoices();
+      window.speechSynthesis.onvoiceschanged = () => {
+        loadVoices();
+      };
+    }
+
+    function getBestVoiceForLocale(locale) {
+      if (!speechVoices || speechVoices.length === 0) {
+        loadVoices();
+      }
+      if (!speechVoices || speechVoices.length === 0) return null;
+      const langPrefix = (locale || 'en').split('-')[0].toLowerCase();
+
+      // 1. Exact match (e.g. 'hi-IN' or 'hi_IN')
+      let match = speechVoices.find(v => v.lang && v.lang.replace('_', '-').toLowerCase() === locale.toLowerCase());
+      if (match) return match;
+
+      // 2. Prefix match (e.g. 'hi' for 'hi-IN')
+      match = speechVoices.find(v => v.lang && v.lang.toLowerCase().startsWith(langPrefix));
+      if (match) return match;
+
+      // 3. Name check (e.g. voice name contains language keywords)
+      const nameKeywords = {
+        hi: ['hindi', 'hemant', 'swara', 'madhur', 'kalpana', 'हिन्दी', 'india'],
+        pa: ['punjabi', 'panjabi', 'ਪੰਜਾਬੀ'],
+        bn: ['bengali', 'bangla', 'বাংলা'],
+        mr: ['marathi', 'मराठी'],
+        ta: ['tamil', 'தமிழ்'],
+        te: ['telugu', 'తెలుగు'],
+        gu: ['gujarati', 'ગુજરાતી'],
+        ur: ['urdu', 'اردو'],
+        fr: ['french', 'français', 'francais'],
+        es: ['spanish', 'español', 'espanol'],
+        de: ['german', 'deutsch']
+      };
+
+      const keywords = nameKeywords[langPrefix];
+      if (keywords) {
+        match = speechVoices.find(v => {
+          const vName = (v.name || '').toLowerCase();
+          return keywords.some(k => vName.includes(k));
+        });
+        if (match) return match;
+      }
+
+      return null;
+    }
+
+    function cleanTextForSpeech(text) {
+      if (!text) return '';
+      return text
+        .replace(new RegExp('[#*_' + String.fromCharCode(96) + '~>•]', 'g'), ' ')
+        .replace(/⚠️|ℹ️|🚨|📍|🚌|🧭|🛑|🔊|📢/gu, '')
+        .replace(/[\u{1F300}-\u{1F9FF}]/gu, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    
+    // ==================== 12-LANGUAGE NATIVE TTS & CHAT ENGINE ====================
+    const CHAT_RESPONSES = {
+  hi: {
+    metro: "⚠️ मेट्रो गेट 1 और 2 से गलती से बचने के निर्देश:\n\n1. आईएसबीटी में प्रवेश करते समय उस भूमिगत सबवे में न जाएं जो मेट्रो गेट 1 और 2 (येलो लाइन) की ओर जाता है।\n2. हमेशा दाईं ओर रहें और 'इंटर-स्टेट बस डेक' (INTER-STATE BUS DECKS) लिखे हरे बोर्ड का अनुसरण करें।\n3. केंद्रीय एस्केलेटर या ईस्ट लगेज रैंप से सीधे लेवल 2 (बे 1-42) पर जाएं।\n4. यदि आपको दिल्ली मेट्रो के टिकट गेट दिखें, तो तुरंत 180° पीछे मुड़ें!",
+    majnu: "मजनू का टीला प्राइवेट वोल्वो स्टैंड आईएसबीटी कश्मीरी गेट से लगभग 2.5 किमी उत्तर आउटर रिंग रोड पर स्थित है। यहाँ से रोज़ाना शाम को मनाली, धर्मशाला और कसोल के लिए ज़िंगबस, इंटरसिटी और लक्ष्मी हॉलिडेज की वोल्वो बसें चलती हैं।",
+    '550': "डीटीसी बस रूट 550 कश्मीरी गेट से महिपालपुर बाईपास को जोड़ती है (वाया लाल किला, आईटीओ, एम्स और धौला कुआं)। यह बस सिटी बस बे 41 से हर 10 मिनट में मिलती है। एसी किराया मात्र ₹25 है।",
+    katra: "कटरा / माता वैष्णो देवी के लिए पनबस वोल्वो स्लीपर बस लेवल 2 इंटरस्टेट डेक, बे 12 से शाम 19:45 बजे रवाना होती है। किराया ₹1,250 है।",
+    manali: "मनाली के लिए एचआरटीसी हिमसुता वोल्वो बस बे 14 से रात 20:15 बजे निकलती है। किराया ₹1,420 है। ईस्ट कॉनकोर्स से रैंप सुविधा भी उपलब्ध है।",
+    jaipur: "जयपुर के लिए राजस्थान रोडवेज (RSRTC) गोल्ड लाइन वोल्वो बस बे 08 से शाम 18:30 बजे रवाना होती है। किराया ₹680 है।",
+    anand: "आनंद विहार आईएसबीटी पूर्वी दिल्ली में उत्तर प्रदेश (UPSRTC) और उत्तराखंड की बसों का मुख्य केंद्र है। कश्मीरी गेट बे 19 से डीटीसी रूट 202 सीधे आनंद विहार जाती है।",
+    cloakroom: "24x7 क्लॉकरूम और सामान रखने की सुविधा लेवल 1 कॉनकोर्स, पिलर 8 के पास उपलब्ध है। शुल्क ₹30 प्रति बैग (24 घंटे के लिए) है। वैध पहचान पत्र अनिवार्य है।",
+    greet: "नमस्ते! मैं आपका आईएसबीटी कश्मीरी गेट एआई सहायक हूँ। आप मुझसे बस बे, प्राइवेट वोल्वो, क्लॉकरूम या मेट्रो गेट से बचने का रास्ता पूछ सकते हैं!",
+    default: (msg) => `मैं "${msg}" के बारे में जानकारी देने में मदद कर सकता हूँ। आप ऊपर सर्च बार में किसी भी बस स्टेशन को खोज सकते हैं या लाइव भीड़ मीटर देख सकते हैं।`
+  },
+  pa: {
+    metro: "⚠️ ਮੈਟਰੋ ਗੇਟ 1 ਅਤੇ 2 ਵਿੱਚ ਗਲਤੀ ਨਾਲ ਜਾਣ ਤੋਂ ਬਚਣ ਦੇ ਨਿਰਦੇਸ਼:\n\n1. ਆਈ.ਐਸ.ਬੀ.ਟੀ. ਵਿੱਚ ਦਾਖਲ ਹੁੰਦੇ ਸਮੇਂ ਮੈਟਰੋ ਗੇਟ 1 ਅਤੇ 2 ਵੱਲ ਜਾਣ ਵਾਲੇ ਸਬਵੇਅ ਵਿੱਚ ਨਾ ਜਾਓ।\n2. ਹਮੇਸ਼ਾ ਸੱਜੇ ਪਾਸੇ ਰਹੋ ਅਤੇ 'ਇੰਟਰ-ਸਟੇਟ ਬੱਸ ਡੈੱਕ' ਦੇ ਹਰੇ ਬੋਰਡਾਂ ਦੀ ਪਾਲਣਾ ਕਰੋ।\n3. ਕੇਂਦਰੀ ਐਸਕੇਲੇਟਰ ਰਾਹੀਂ ਸਿੱਧੇ ਲੈਵਲ 2 (ਬੇਅ 1-42) 'ਤੇ ਜਾਓ।\n4. ਜੇਕਰ ਮੈਟਰੋ ਗੇਟ ਦਿਖਣ ਤਾਂ ਤੁਰੰਤ 180° ਵਾਪਸ ਮੁੜੋ!",
+    majnu: "ਮਜਨੂੰ ਕਾ ਟੀਲਾ ਪ੍ਰਾਈਵੇਟ ਵੋਲਵੋ ਹੱਬ ਆਈ.ਐਸ.ਬੀ.ਟੀ. ਕਸ਼ਮੀਰੀ ਗੇਟ ਤੋਂ ਲਗਭਗ 2.5 ਕਿਲੋਮੀਟਰ ਉੱਤਰ ਵੱਲ ਹੈ। ਮਨਾਲੀ, ਧਰਮਸ਼ਾਲਾ ਲਈ ਪ੍ਰਾਈਵੇਟ ਵੋਲਵੋ ਇੱਥੋਂ ਚੱਲਦੀਆਂ ਹਨ।",
+    '550': "ਡੀਟੀਸੀ ਰੂਟ 550 ਕਸ਼ਮੀਰੀ ਗੇਟ ਤੋਂ ਮਹੀਪਾਲਪੁਰ ਨੂੰ ਜੋੜਦੀ ਹੈ। ਇਹ ਸਿਟੀ ਬੱਸ ਬੇਅ 41 ਤੋਂ ਹਰ 10 ਮਿੰਟ ਬਾਅਦ ਮਿਲਦੀ ਹੈ। ਕਿਰਾਇਆ ₹25 ਹੈ।",
+    katra: "ਕਟੜਾ ਵੈਸ਼ਨੋ ਦੇਵੀ ਲਈ ਪਨਬੱਸ ਵੋਲਵੋ ਬੇਅ 12 ਤੋਂ ਸ਼ਾਮ 19:45 ਵਜੇ ਰਵਾਨਾ ਹੁੰਦੀ ਹੈ। ਕਿਰਾਇਆ ₹1,250 ਹੈ।",
+    manali: "ਮਨਾਲੀ ਲਈ ਐਚ.ਆਰ.ਟੀ.ਸੀ. ਵੋਲਵੋ ਬੇਅ 14 ਤੋਂ ਰਾਤ 20:15 ਵਜੇ ਚੱਲਦੀ ਹੈ। ਕਿਰਾਇਆ ₹1,420 ਹੈ।",
+    jaipur: "ਜੈਪੁਰ ਲਈ ਵੋਲਵੋ ਬੱਸ ਬੇਅ 08 ਤੋਂ ਸ਼ਾਮ 18:30 ਵਜੇ ਰਵਾਨਾ ਹੁੰਦੀ ਹੈ। ਕਿਰਾਇਆ ₹680 ਹੈ।",
+    anand: "ਆਨੰਦ ਵਿਹਾਰ ਆਈ.ਐਸ.ਬੀ.ਟੀ. ਯੂ.ਪੀ. ਅਤੇ ਉੱਤਰਾਖੰਡ ਦੀਆਂ ਬੱਸਾਂ ਲਈ ਮੁੱਖ ਟਰਮੀਨਲ ਹੈ। ਬੇਅ 19 ਤੋਂ ਬੱਸ 202 ਸਿੱਧੀ ਜਾਂਦੀ ਹੈ।",
+    cloakroom: "ਲੈਵਲ 1 ਪਿੱਲਰ 8 ਦੇ ਨੇੜੇ 24 ਘੰਟੇ ਸਮਾਨ ਰੱਖਣ ਲਈ ਕਲੋਕਰੂਮ ਉਪਲਬਧ ਹੈ। ਫੀਸ ₹30 ਪ੍ਰਤੀ ਬੈਗ ਹੈ।",
+    greet: "ਸਤਿ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਤੁਹਾਡਾ ਆਈ.ਐਸ.ਬੀ.ਟੀ. ਸਹਾਇਕ ਹਾਂ। ਤੁਸੀਂ ਬੱਸ ਪਲੇਟਫਾਰਮ, ਰੂਟ ਜਾਂ ਵੋਲਵੋ ਬਾਰੇ ਪੁੱਛ ਸਕਦੇ ਹੋ।",
+    default: (msg) => `ਮੈਂ "${msg}" ਵਿੱਚ ਤੁਹਾਡੀ ਮਦਦ ਕਰ ਸਕਦਾ ਹਾਂ। ਤੁਸੀਂ ਸਰਚ ਬਾਰ ਜਾਂ ਭੀੜ ਮੀਟਰ ਦੇਖ ਸਕਦੇ ਹੋ।`
+  },
+  bn: {
+    metro: "⚠️ ভুল করে মেট্রো গেট ১ এবং ২ এ যাওয়া এড়ানোর নির্দেশিকা:\n\n১. আইএসবিটি প্রবেশের পর মেট্রো গেট ১ ও ২ এর দিকে যাওয়া পাতাল পথ ব্যবহার করবেন না।\n২. ডান দিকে থাকুন এবং 'ইন্টার-স্টেট বাস ডেক' নির্দেশক সবুজ সাইন অনুসরণ করুন।\n৩. কেন্দ্রীয় এস্কেলেটর দিয়ে সরাসরি লেভেল ২ (বে ১-৪২) এ যান।\n৪. মেট্রো গেট দেখলে সাথে সাথে ১৮০° ঘুরে দাঁড়ান!",
+    majnu: "মজনু কা টিলা প্রাইভেট ভলভো স্ট্যান্ড কাশ্মীরি গেট থেকে প্রায় ২.৫ কিমি উত্তরে। এখান থেকে মানালি ও ধর্মশালার ভলভো ছাড়ে।",
+    '550': "ডিটিসি রুট ৫৫০ কাশ্মীরি গেট থেকে মহিপালপুর সরাসরি যায়। বে ৪১ থেকে প্রতি ১০ মিনিটে ছাড়ে। ভাড়া ₹২৫।",
+    katra: "কাটরা বৈষ্ণো দেবী ভলভো লেভেল ২, বে ১২ থেকে সন্ধ্যা ১৯:৪৫ এ ছাড়ে। ভাড়া ₹১,২৫০।",
+    manali: "মানালি এইচআরটিসি ভলভো বে ১৪ থেকে রাত ২০:১৫ এ ছাড়ে। ভাড়া ₹১,৪২০।",
+    jaipur: "জয়পুর আরএসআরটিসি ভলভো বে ০৮ থেকে সন্ধ্যা ১৮:৩০ এ ছাড়ে। ভাড়া ₹৬৮০।",
+    anand: "আনন্দ বিহার আইএসবিটি ইউপি ও উত্তরাখণ্ডের বাসের মূল টার্মিনাল। বে ১৯ থেকে বাস ২০২ সরাসরি যায়।",
+    cloakroom: "লেভেল ১ পিলার ৮ এর কাছে ২৪ ঘণ্টা ক্লকরুম ও লাগেজ স্টোরেজ সুবিধা রয়েছে। ফি প্রতি ব্যাগ ₹৩০।",
+    greet: "নমস্কার! আমি আপনার আইএসবিটি এআই সহায়ক। আপনি বাস প্ল্যাটফর্ম, রুট বা ভলভো বাস সম্পর্কে জিজ্ঞাসা করতে পারেন।",
+    default: (msg) => `আমি "${msg}" সম্পর্কিত তথ্যে আপনাকে সাহায্য করতে পারি। আপনি উপরের সার্চ বক্সে স্টেশন খুঁজতে পারেন।`
+  },
+  mr: {
+    metro: "⚠️ मेट्रो गेट १ आणि २ कडे चुकून जाणे टाळण्यासाठी सूचना:\n\n१. आयएसबीटीमध्ये प्रवेश करताना मेट्रो गेट १ व २ कडे जाणाऱ्या सबवेमध्ये जाऊ नका.\n२. उजव्या बाजूला राहा आणि 'इंटर-स्टेट बस डेक' चे हिरवे फलक फॉलो करा.\n३. मध्यवर्ती एस्केलेटरने थेट लेव्हल २ (बे १-४२) वर जा.\n४. मेट्रो गेट्स दिसल्यास लगेच १८०° मागे फिरा!",
+    majnu: "मजनू का टीला खाजगी व्होल्वो हब आयएसबीटी काश्मिरी गेटपासून २.५ किमी उत्तरेस आहे. मनाली, धर्मशालासाठी खाजगी व्होल्वो येथून सुटतात.",
+    '550': "डीटीसी रूट ५५० काश्मिरी गेट ते महिपालपूर थेट जोडतो. बे ४१ वरून दर १० मिनिटांनी बस उपलब्ध आहे. भाडे ₹२५ आहे.",
+    katra: "कटरा / वैष्णो देवीसाठी व्होल्वो बस लेव्हल २, बे १२ वरून संध्याकाळी १९:४५ वाजता सुटते. भाडे ₹१,२५० आहे.",
+    manali: "मनालीसाठी एचआरटीसी व्होल्वो बे १४ वरून रात्री २०:१५ वाजता सुटते. भाडे ₹१,४२० आहे.",
+    jaipur: "जयपूरसाठी आरएसआरटीसी व्होल्वो बे ०८ वरून संध्याकाळी १८:३० वाजता सुटते. भाडे ₹६८० आहे.",
+    anand: "आनंद विहार आयएसबीटी यूपी आणि उत्तराखंड बसेसचे मुख्य केंद्र आहे. बे १९ वरून डीटीसी रूट २०२ थेट जाते.",
+    cloakroom: "लेव्हल १ पिलर ८ जवळ २४ तास क्लॉकरूम आणि लगेज स्टोरेज उपलब्ध आहे. दर प्रति बॅग ₹३० (२४ तासांसाठी).",
+    greet: "नमस्कार! मी तुमचा आयएसबीटी सहाय्यक आहे. तुम्ही बस प्लॅटफॉर्म, मार्ग किंवा खाजगी व्होल्वोबद्दल विचारू शकता.",
+    default: (msg) => `मी "${msg}" बाबत मदत करू शकतो. आपण वरील शोध पट्टीमध्ये स्थानक शोधू शकता.`
+  },
+  ta: {
+    metro: "⚠️ மெட்ரோ கேட் 1 & 2 க்கு தவறாக செல்வதைத் தவிர்க்க வழிகாட்டுதல்:\n\n1. ஐஎஸ்பிடி நுழைவாயிலில் இருந்து மெட்ரோ கேட் 1 மற்றும் 2 சுரங்கப்பாதைக்குள் செல்ல வேண்டாம்.\n2. வலதுபுறமாக சென்று 'இன்டர்-ஸ்டேட் பஸ் டெக்ஸ்' பச்சை பலகைகளைப் பின்தொடரவும்.\n3. எஸ்கலேட்டர் மூலம் நேரடியாக நிலை 2 (பே 1-42) க்குச் செல்லவும்.\n4. மெட்ரோ நுழைவுவாயில் கண்டால் உடனடியாக 180° திரும்பி வரவும்!",
+    majnu: "மஜ்னு கா திலா தனியார் வோல்வோ நிலையம் காஷ்மீரி கேட்டில் இருந்து 2.5 கி.மீ வடக்கில் உள்ளது. மணாலி மற்றும் தர்மசாலா செல்லும் பேருந்துகள் இங்கிருந்து புறப்படுகின்றன.",
+    '550': "டிடிசி பாதை 550 காஷ்மீரி கேட் முதல் மஹிபால்பூர் வரை இணைக்கிறது. பே 41 இல் இருந்து 10 நிமிடங்களுக்கு ஒரு முறை புறப்படுகிறது. கட்டணம் ₹25.",
+    katra: "கத்ரா வைஷ்ணோ தேவி வோல்வோ பேருந்து நிலை 2, பே 12 இல் இருந்து மாலை 19:45 மணிக்கு புறப்படுகிறது. கட்டணம் ₹1,250.",
+    manali: "மணாலி எச்ஆர்டிசி வோல்வோ பே 14 இல் இருந்து இரவு 20:15 மணிக்கு புறப்படுகிறது. கட்டணம் ₹1,420.",
+    jaipur: "ஜெய்ப்பூர் ஆர்எஸ்ஆர்டிசி வோல்வோ பே 08 இல் இருந்து மாலை 18:30 மணிக்கு புறப்படுகிறது. கட்டணம் ₹680.",
+    anand: "ஆனந்த் விஹார் ஐஎஸ்பிடி உத்தரபிரதேசம் மற்றும் உத்தரகாண்ட் பேருந்துகளுக்கான முக்கிய முனையம் ஆகும். பே 19 இலிருந்து பேருந்து 202 செல்கிறது.",
+    cloakroom: "நிலை 1 பில்லர் 8 அருகே 24 மணி நேர லக்கேஜ் வைப்பகம் உள்ளது. கட்டணம் பை ஒன்றுக்கு ₹30.",
+    greet: "வணக்கம்! நான் உங்கள் ஐஎஸ்பிடி பயண உதவியாளர். பேருந்து தளம் அல்லது வழித்தடங்கள் பற்றி என்னிடம் கேட்கலாம்.",
+    default: (msg) => `"${msg}" தொடர்பாக நான் உங்களுக்கு உதவ முடியும். நீங்கள் மேலே உள்ள தேடல் பட்டியைப் பயன்படுத்தலாம்.`
+  },
+  te: {
+    metro: "⚠️ మెట్రో గేట్ 1 & 2 లోకి పొరపాటున వెళ్లకుండా సూచనలు:\n\n1. ఐఎస్బీటీలోకి ప్రవేశించేటప్పుడు మెట్రో గేట్ 1 & 2 సబ్‌వేలోకి వెళ్లవద్దు.\n2. కుడి వైపున ఉంటూ 'ఇంటర్-స్టేట్ బస్ డెక్స్' పచ్చని బోర్డులను అనుసరించండి.\n3. ఎస్కలేటర్ ద్వారా నేరుగా లెవల్ 2 (బే 1-42) కు వెళ్లండి.\n4. మెట్రో గేట్లు కనిపిస్తే వెంటనే 180° వెనక్కి తిరగండి!",
+    majnu: "మజ్ను కా తిలా ప్రైవేట్ వోల్వో హబ్ కాశ్మీరీ గేట్ నుండి 2.5 కి.మీ ఉత్తరాన ఉంది. మనాలీ బస్సులు ఇక్కడి నుంచే బయలుదేరుతాయి.",
+    '550': "డీటీసీ రూట్ 550 కాశ్మీరీ గేట్ నుండి మహిపాల్‌పూర్‌కు వెళ్తుంది. బే 41 నుండి ప్రతి 10 నిమిషాలకు అందుబాటులో ఉంటుంది. ఛార్జీ ₹25.",
+    katra: "కత్రా వైష్ణో దేవి వోల్వో బస్సు లెవల్ 2, బే 12 నుండి సాయంత్రం 19:45 కు బయలుదేరుతుంది. ఛార్జీ ₹1,250.",
+    manali: "మనాలీ హెచ్‌ఆర్‌టీసీ వోల్వో బే 14 నుండి రాత్రి 20:15 కు బయలుదేరుతుంది. ఛార్జీ ₹1,420.",
+    jaipur: "జైపూర్ వోల్వో బస్సు బే 08 నుండి సాయంత్రం 18:30 కు బయలుదేరుతుంది. ఛార్జీ ₹680.",
+    anand: "ఆనంద్ విహార్ ఐఎస్బీటీ యుపి, ఉత్తరాఖండ్ బస్సులకు ప్రధాన టెర్మినల్. బే 19 నుండి బస్సు 202 నేరుగా వెళ్తుంది.",
+    cloakroom: "లెవల్ 1 పిల్లర్ 8 వద్ద 24 గంటల లగేజ్ క్లోక్‌రూమ్ ఉంది. రుసుము ప్రతి బ్యాగ్‌కు ₹30.",
+    greet: "నమస్కారం! నేను మీ ఐఎస్బీటీ సహాయకుడిని. బస్సు బే లేదా మార్గాల గురించి నన్ను అడగవచ్చు.",
+    default: (msg) => `నేను "${msg}" లో మీకు సహాయం చేయగలను. మీరు పైన ఉన్న శోధన పట్టీని ఉపయోగించవచ్చు.`
+  },
+  gu: {
+    metro: "⚠️ મેટ્રો ગેટ 1 અને 2 માં ભૂલથી જતા અટકવા માટેની સૂચનાઓ:\n\n1. આઇએસબીટીમાં પ્રવેશ કરતી વખતે મેટ્રો ગેટ 1 અને 2 તરફ જતા સબવેમાં ન જશો.\n2. હંમેશા જમણી બાજુ રહો અને 'ઇન્ટર-સ્ટેટ બસ ડેક્સ' ના લીલા બોર્ડને અનુસરો.\n3. સેન્ટ્રલ એસ્કેલેટર દ્વારા સીધા લેવલ 2 (બે 1-42) પર જાઓ.\n4. જો મેટ્રો ટર્નસ્ટાઇલ દેખાય તો તરત જ 180° પાછા વળો!",
+    majnu: "મજનૂ કા ટીલા પ્રાઇવેટ વોલ્વો હબ કાશ્મીરી ગેટથી 2.5 કિમી ઉત્તરે છે. મનાલી અને ધર્મશાલાની ખાનગી વોલ્વો અહીંથી ઊપડે છે.",
+    '550': "ડીટીસી રૂટ 550 કાશ્મીરી ગેટથી મહિપાલપુર જાય છે. સિટી બસ બે 41 પરથી દર 10 મિનિટે ઉપડે છે. ભાડું ₹25 છે.",
+    katra: "કટરા વૈષ્ણોદેવી વોલ્વો લેવલ 2, બે 12 પરથી સાંજે 19:45 વાગ્યે ઉપડે છે. ભાડું ₹1,250 છે.",
+    manali: "મનાલી એચઆરટીસી વોલ્વો બે 14 પરથી રાત્રે 20:15 વાગ્યે ઉપડે છે. ભાડું ₹1,420 છે.",
+    jaipur: "જયપુર આરએસઆરટીસી વોલ્વો બે 08 પરથી સાંજે 18:30 વાગ્યે ઉપડે છે. ભાડું ₹680 છે.",
+    anand: "આનંદ વિહાર આઇએસબીટી યુપી અને ઉત્તરાખંડની બસોનું મુખ્ય કેન્દ્ર છે. બે 19 થી બસ 202 સીધી જાય છે.",
+    cloakroom: "લેવલ 1 પિલર 8 પાસે 24 કલાક લગેજ ક્લોકરૂમ ઉપલબ્ધ છે. પ્રતિ બેગ ભાડું ₹30 છે.",
+    greet: "નમસ્તે! હું તમારો આઇએસબીટી એઆઈ સહાયક છું. તમે બસ સ્ટેન્ડ, રૂટ કે પ્લેટફોર્મ વિશે પૂછી શકો છો.",
+    default: (msg) => `હું "${msg}" અંગે તમને મદદ કરી શકું છું. તમે ઉપરના સર્ચ બોક્સમાં પણ શોધી શકો છો.`
+  },
+  ur: {
+    metro: "⚠️ میٹرو گیٹ 1 اور 2 میں غلطی سے داخل ہونے سے بچنے کی ہدایات:\n\n1. آئی ایس بی ٹی میں داخل ہوتے وقت میٹرو گیٹ 1 اور 2 کی طرف جانے والے زیر زمین سب وے میں نہ جائیں۔\n2. دائیں طرف رہیں اور 'انٹر اسٹیٹ بس ڈیکس' کے سبز بورڈز پر عمل کریں۔\n3. مرکزی ایسکلیٹر کے ذریعے براہ راست لیول 2 (بے 1-42) پر جائیں۔\n4. اگر آپ کو میٹرو گیٹ نظر آئیں تو فوراً 180 ڈگری پیچھے مڑیں!",
+    majnu: "مجنوں کا ٹیلا پرائیویٹ وولوو اسٹینڈ کشمیری گیٹ سے تقریباً 2.5 کلومیٹر شمال میں ہے۔ منالی کے لیے وولوو بسیں یہیں سے روانہ ہوتی ہیں۔",
+    '550': "ڈی ٹی سی بس روٹ 550 کشمیری گیٹ سے مہیپال پور کو جوڑتی ہے۔ بے 41 سے ہر 10 منٹ پر ملتی ہے۔ کرایہ ₹25 ہے۔",
+    katra: "کٹرا ویشنو دیوی کے لیے وولوو بس لیول 2، بے 12 سے شام 19:45 بجے روانہ ہوتی ہے۔ کرایہ ₹1,250 ہے۔",
+    manali: "منالی کے لیے ایچ آر ٹی سی وولوو بس بے 14 سے رات 20:15 بجے روانہ ہوتی ہے۔ کرایہ ₹1,420 ہے۔",
+    jaipur: "جے پور کے لیے وولوو بس بے 08 سے شام 18:30 بجے روانہ ہوتی ہے۔ کرایہ ₹680 ہے۔",
+    anand: "آنند وہار آئی ایس بی ٹی یوپی اور اتراکھنڈ کی بسوں کا مرکزی اڈہ ہے۔ بے 19 سے بس 202 سیدھی جاتی ہے۔",
+    cloakroom: "لیول 1 ستون 8 کے قریب 24 گھنٹے کلوک روم اور سامان رکھنے کی سہولت ہے۔ چارج ₹30 فی بیگ ہے۔",
+    greet: "خوش آمدید! میں آپ کا آئی ایس بی ٹی سفری معاون ہوں۔ آپ مجھ سے بس پلیٹ فارم یا روٹ کے بارے میں پوچھ سکتے ہیں۔",
+    default: (msg) => `میں "${msg}" کے بارے میں آپ کی رہنمائی کر سکتا ہوں۔ آپ تلاش کا خانہ بھی استعمال کر سکتے ہیں۔`
+  },
+  fr: {
+    metro: "⚠️ INSTRUCTIONS POUR ÉVITER D'ENTRER DANS LE MÉTRO PAR ERREUR :\n\n1. En entrant à l'ISBT, NE PRENEZ PAS le passage souterrain menant aux portes de métro 1 et 2 (Ligne Jaune).\n2. Restez à droite et suivez les panneaux lumineux verts 'INTER-STATE BUS DECKS'.\n3. Prenez l'escalier mécanique central ou la rampe Est vers le niveau 2 (Quais 1-42).\n4. Si vous voyez les portillons du métro, faites demi-tour immédiatement à 180° !",
+    majnu: "Le terminal privé de bus Volvo de Majnu Ka Tila est situé à 2,5 km au nord d'ISBT Kashmere Gate le long de l'Outer Ring Road. Départs quotidiens pour Manali et Dharamshala.",
+    '550': "La ligne DTC 550 relie directement Kashmere Gate à Mahipalpur Bypass. Départs du quai 41 toutes les 10 minutes. Tarif : 25 ₹.",
+    katra: "Le bus Volvo PUNBUS pour Katra / Vaishno Devi part du niveau 2, Quai 12 à 19h45. Tarif : 1 250 ₹.",
+    manali: "Le bus Volvo HRTC pour Manali part du Quai 14 à 20h15. Tarif : 1 420 ₹.",
+    jaipur: "Le bus Volvo RSRTC pour Jaipur part du Quai 08 à 18h30. Tarif : 680 ₹.",
+    anand: "ISBT Anand Vihar est le terminal principal pour l'Uttar Pradesh et l'Uttarakhand. Prenez la ligne DTC 202 depuis le quai 19.",
+    cloakroom: "La consigne à bagages 24h/24 se trouve au niveau 1 près du pilier 8. Tarif : 30 ₹ par bagage / 24h.",
+    greet: "Bonjour ! Je suis votre assistant de voyage IA pour l'ISBT Kashmere Gate. Comment puis-je vous aider ?",
+    default: (msg) => `Je peux vous renseigner sur "${msg}". Vous pouvez rechercher des stations ou consulter l'odomètre d'affluence en direct.`
+  },
+  es: {
+    metro: "⚠️ INSTRUCCIONES PARA EVITAR ENTRAR AL METRO POR ERROR:\n\n1. Al entrar a la terminal ISBT, NO TOME el paso subterráneo hacia las Puertas 1 y 2 del Metro (Línea Amarilla).\n2. Manténgase a la derecha y siga los letreros verdes iluminados 'INTER-STATE BUS DECKS'.\n3. Suba por la escalera mecánica central o rampa Este hacia el Nivel 2 (Andenes 1-42).\n4. ¡Si ve los torniquetes del Metro de Delhi, dé la vuelta 180° de inmediato!",
+    majnu: "La estación privada de autobuses Volvo de Majnu Ka Tila se encuentra a 2.5 km al norte de ISBT Kashmere Gate. Salidas hacia Manali y Dharamshala.",
+    '550': "La ruta DTC 550 conecta Kashmere Gate directamente con Mahipalpur. Sale del Andén 41 cada 10 minutos. Tarifa: ₹25.",
+    katra: "El autobús Volvo a Katra / Vaishno Devi sale del Nivel 2, Andén 12 a las 19:45. Tarifa: ₹1,250.",
+    manali: "El autobús Volvo HRTC a Manali sale del Andén 14 a las 20:15. Tarifa: ₹1,420.",
+    jaipur: "El autobús Volvo RSRTC a Jaipur sale del Andén 08 a las 18:30. Tarifa: ₹680.",
+    anand: "ISBT Anand Vihar es la terminal principal hacia Uttar Pradesh y Uttarakhand. Tome la ruta DTC 202 desde el andén 19.",
+    cloakroom: "La consigna de equipaje 24 horas está en el Nivel 1 cerca del Pilar 8. Tarifa: ₹30 por maleta / 24 hrs.",
+    greet: "¡Hola! Soy tu asistente de viaje con IA para ISBT Kashmere Gate. ¿En qué te puedo ayudar hoy?",
+    default: (msg) => `Puedo ayudarte con "${msg}". Puedes buscar estaciones en la barra superior o ver el odómetro de congestión.`
+  },
+  de: {
+    metro: "⚠️ ANWEISUNGEN ZUR VERMEIDUNG DER METRO-TORE 1 & 2:\n\n1. Beim Betreten des ISBT NICHT die Fußgängerunterführung zu den Metro-Toren 1 & 2 nehmen.\n2. Halten Sie sich rechts und folgen Sie den grünen Schildern 'INTER-STATE BUS DECKS'.\n3. Nehmen Sie die Rolltreppe direkt zu Ebene 2 (Bussteige 1-42).\n4. Wenn Sie U-Bahn-Schranken sehen, drehen Sie sich sofort um 180° um!",
+    majnu: "Der private Volvo-Busbahnhof Majnu Ka Tila liegt 2,5 km nördlich von ISBT Kashmere Gate. Tägliche Fahrten nach Manali und Dharamshala.",
+    '550': "DTC Buslinie 550 verbindet Kashmere Gate direkt mit Mahipalpur. Fährt alle 10 Min von Bussteig 41 ab. Fahrpreis: ₹25.",
+    katra: "Der Volvo-Bus nach Katra / Vaishno Devi fährt von Ebene 2, Bussteig 12 um 19:45 Uhr ab. Fahrpreis: ₹1.250.",
+    manali: "Der HRTC Volvo nach Manali fährt von Bussteig 14 um 20:15 Uhr ab. Fahrpreis: ₹1.420.",
+    jaipur: "Der RSRTC Volvo nach Jaipur fährt von Bussteig 08 um 18:30 Uhr ab. Fahrpreis: ₹680.",
+    anand: "ISBT Anand Vihar ist der Hauptknotenpunkt für Uttar Pradesh und Uttarakhand. DTC Linie 202 fährt von Bussteig 19.",
+    cloakroom: "Die 24x7 Gepäckaufbewahrung befindet sich auf Ebene 1 bei Pfeiler 8. Gebühr: ₹30 pro Gepäckstück / 24 Std.",
+    greet: "Guten Tag! Ich bin Ihr KI-Reiseassistent für das Terminal ISBT Kashmere Gate. Fragen Sie mich gerne!",
+    default: (msg) => `Ich kann Ihnen bei "${msg}" helfen. Nutzen Sie das Suchfeld oder den Live-Stau-Odometer.`
+  },
+  en: {
+    metro: "⚠️ EXACT INSTRUCTIONS TO AVOID ACCIDENTAL METRO GATES:\n\n1. When entering ISBT from Ring Road or Lothian Road, DO NOT take the underground pedestrian subway leading to Metro Gate 1 & 2 (Yellow Line).\n2. Keep right and follow the wide concourse corridor with the overhead illuminated green signs saying 'INTER-STATE BUS DECKS'.\n3. Take the central escalator or East Luggage Ramp directly up to Level 2 (Bays 1-42).\n4. If you see Delhi Metro AFC turnstiles, you are in the wrong place! Turn around 180° immediately.",
+    majnu: "Majnu Ka Tila Private Volvo Hub is located just 2.5 km north of ISBT Kashmere Gate along the Outer Ring Road. Operators like Zingbus, IntrCity, Laxmi Holidays, and Northern Travels depart from here every evening for Manali, Dharamshala, and Kasol. You can click 'All Delhi Stations' or search 'Majnu Ka Tila' in the top search bar to navigate directly.",
+    '550': "DTC Bus Route 550 connects ISBT Kashmere Gate directly to Mahipalpur Bypass via Red Fort, Delhi Gate, ITO, AIIMS, and Dhaula Kuan. Buses run every 10 minutes from City Bus Bay 41. Fare is ₹25 (AC). Click the 'Take me there' button on the map to begin.",
+    katra: "PUNBUS Volvo sleeper coach to Katra / Vaishno Devi departs from Level 2 Interstate Deck, Bay 12 at 19:45 IST. Fare is ₹1,250. Click 'Bay 12: Katra Volvo' on the map for turn-by-turn guidance.",
+    manali: "Manali HRTC Himsuta Volvo departs from Bay 14 at 20:15 IST. Fare is ₹1,420. Accessible ramp routing is available via the East Concourse.",
+    jaipur: "RSRTC Gold Line Volvo to Jaipur departs from Bay 08 at 18:30 IST. Fare is ₹680.",
+    anand: "ISBT Anand Vihar in East Delhi is the primary terminus for Uttar Pradesh (UPSRTC) and Uttarakhand (UTC) buses. You can take DTC Route 202 from Bay 19 at Kashmere Gate directly to Anand Vihar.",
+    cloakroom: "The 24x7 Cloakroom & Luggage Storage is located on Level 1 Concourse near Pillar 8. Charge is ₹30/bag per 24 hours. A government photo ID is required.",
+    greet: "Namaste! I am your ISBT Kashmere Gate AI Travel Companion. I can answer any doubts about bus bays, private Volvo stations, or how to avoid accidental Metro gates!",
+    default: (msg) => `I can help with "${msg}". You can search any bus station in the top search box or open the Crowd Odometer sector to inspect live terminal passenger congestion.`
+  }
+};
+
+function detectIntent(msg) {
+  const q = (msg || '').toLowerCase();
+  if (q.includes('metro') || q.includes('gate 1') || q.includes('gate1') || q.includes('avoid') || q.includes('wrong') ||
+      q.includes('मेट्रो') || q.includes('गेट 1') || q.includes('गलत') || q.includes('सबवे') || q.includes('टर्नस्टाइल') ||
+      q.includes('ਮੈਟਰੋ') || q.includes('গেটের') || q.includes('மெட்ரோ') || q.includes('మెట్రో')) {
+    return 'metro';
+  }
+  if (q.includes('majnu') || q.includes('tila') || (q.includes('private') && q.includes('volvo')) ||
+      q.includes('मजनू') || q.includes('टीला') || q.includes('प्राइवेट') || q.includes('ਮਜਨੂੰ') || q.includes('মজনু') ||
+      q.includes('மஜ்னு') || q.includes('మజ్ను') || q.includes('zingbus') || q.includes('intrcity')) {
+    return 'majnu';
+  }
+  if (q.includes('550') || q.includes('mahipalpur') || q.includes('airport') ||
+      q.includes('महिपालपुर') || q.includes('हवाई') || q.includes('ਮਹੀਪਾਲਪੁਰ') || q.includes('মহিপালপুর') ||
+      q.includes('மஹிபால்பூர்') || q.includes('మహిపాల్‌పూర్')) {
+    return '550';
+  }
+  if (q.includes('katra') || q.includes('vaishno') || q.includes('कटरा') || q.includes('वैष्णो') ||
+      q.includes('ਕਟੜਾ') || q.includes('কাটরা') || q.includes('கத்ரா') || q.includes('కత్రా') ||
+      q.includes('bay 12') || q.includes('बे 12') || q.includes('ਪਲੇਟਫਾਰਮ 12')) {
+    return 'katra';
+  }
+  if (q.includes('manali') || q.includes('hrtc') || q.includes('मनाली') ||
+      q.includes('ਮਨਾਲੀ') || q.includes('মানালি') || q.includes('மணாலி') || q.includes('మనాలీ') ||
+      q.includes('bay 14') || q.includes('बे 14')) {
+    return 'manali';
+  }
+  if (q.includes('jaipur') || q.includes('rsrtc') || q.includes('जयपुर') ||
+      q.includes('ਜੈਪੁਰ') || q.includes('জয়পুর') || q.includes('ஜெய்ப்பூர்') || q.includes('జైపూర్') ||
+      q.includes('bay 8') || q.includes('बे 8') || q.includes('बे 08')) {
+    return 'jaipur';
+  }
+  if (q.includes('anand vihar') || q.includes('anand') || q.includes('आनंद विहार') || q.includes('आनन्द विहार') ||
+      q.includes('ਆਨੰਦ') || q.includes('আনন্দ') || q.includes('ஆனந்த்') || q.includes('ఆనంద్')) {
+    return 'anand';
+  }
+  if (q.includes('cloakroom') || q.includes('luggage') || q.includes('locker') || q.includes('baggage') || q.includes('saman') ||
+      q.includes('क्लॉकरूम') || q.includes('सामान') || q.includes('लॉकर') || q.includes('बैग') ||
+      q.includes('ਸਮਾਨ') || q.includes('লাগেজ') || q.includes('लगेज') || q.includes('லக்கேஜ்') || q.includes('లగేజ్')) {
+    return 'cloakroom';
+  }
+  if (q.includes('hello') || q.includes('hi') || q.includes('namaste') || q.includes('नमस्ते') || q.includes('ਸਤਿ') ||
+      q.includes('নমস্কার') || q.includes('வணக்கம்') || q.includes('నమస్కారం') || q.includes('bonjour') || q.includes('hola') ||
+      q.includes('hallo') || q.includes('help') || q.includes('madad') || q.includes('मदद') || q.includes('सहायता')) {
+    return 'greet';
+  }
+  return 'default';
+}
+
+    function getLocalChatResponse(text, locale) {
+      const langKey = (locale || 'en').split('-')[0].toLowerCase();
+      const intent = detectIntent(text);
+      const pack = CHAT_RESPONSES[langKey] || CHAT_RESPONSES['en'];
+      if (intent === 'default') {
+        return typeof pack.default === 'function' ? pack.default(text) : CHAT_RESPONSES['en'].default(text);
+      }
+      return pack[intent] || CHAT_RESPONSES['en'][intent];
+    }
+
+    let currentSpeechToken = 0;
+    let currentTtsAudio = null;
+    let fallbackSpeechTimer = null;
+
+    // Visual indicator when TTS is speaking (chat toggle button glow)
+    function updateVoiceSpeakingUI(isSpeaking, text, langKey) {
+      const chatToggle = document.getElementById('chat-toggle-btn');
+      if (!chatToggle) return;
+      if (isSpeaking) {
+        chatToggle.classList.add('ring-4', 'ring-emerald-400/60');
+        chatToggle.title = 'Speaking...';
+      } else {
+        chatToggle.classList.remove('ring-4', 'ring-emerald-400/60');
+        chatToggle.title = 'Open AI Travel Assistant';
+      }
+    }
+    function stopSpeaking() {
+      currentSpeechToken++;
+      if (fallbackSpeechTimer) {
+        clearTimeout(fallbackSpeechTimer);
+        fallbackSpeechTimer = null;
+      }
+      if (currentTtsAudio) {
+        try {
+          currentTtsAudio.pause();
+          currentTtsAudio.currentTime = 0;
+          currentTtsAudio.removeAttribute('src');
+          currentTtsAudio.load();
+        } catch (e) {}
+        currentTtsAudio = null;
+      }
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+        } catch (e) {}
+      }
+      updateVoiceSpeakingUI(false);
+    }
+
+    // High-Fidelity Multilingual Speech: Plays authentic native voice for all 12 Indian & Global languages
+    function speakText(text, targetLocale) {
+      if (!isVoiceEnabled) return;
+      stopSpeaking();
+
+      const clean = cleanTextForSpeech(text);
+      if (!clean) return;
+
+      const thisToken = currentSpeechToken;
+      const locale = targetLocale || currentLocale || 'en-IN';
+      const langKey = locale.split('-')[0].toLowerCase();
+
+      updateVoiceSpeakingUI(true, clean, langKey);
+
+      let fallbackExecuted = false;
+      const executeFallbackOnce = () => {
+        if (fallbackExecuted || thisToken !== currentSpeechToken) return;
+        fallbackExecuted = true;
+        if (fallbackSpeechTimer) {
+          clearTimeout(fallbackSpeechTimer);
+          fallbackSpeechTimer = null;
+        }
+        fallbackBrowserSpeech(clean, locale, thisToken);
+      };
+
+      try {
+        const audio = new Audio();
+        currentTtsAudio = audio;
+        audio.preload = 'auto';
+
+        audio.onended = () => {
+          if (thisToken === currentSpeechToken) {
+            updateVoiceSpeakingUI(false);
+            currentTtsAudio = null;
+          }
+        };
+
+        audio.onerror = () => {
+          executeFallbackOnce();
+        };
+
+        // Fallback timer: if server audio fails to load/play in 1.4s, use browser speech
+        fallbackSpeechTimer = setTimeout(() => {
+          if (thisToken === currentSpeechToken && (!audio.duration || audio.paused)) {
+            executeFallbackOnce();
+          }
+        }, 1400);
+
+        audio.src = `/api/tts?lang=${encodeURIComponent(langKey)}&text=${encodeURIComponent(clean)}`;
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            executeFallbackOnce();
+          });
+        }
+      } catch (err) {
+        executeFallbackOnce();
+      }
+    }
+
+    function fallbackBrowserSpeech(clean, locale, token) {
+      if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        updateVoiceSpeakingUI(false);
+        return;
+      }
+      try {
+        window.speechSynthesis.cancel();
+
+        setTimeout(() => {
+          if (token && token !== currentSpeechToken) return;
+
+          const utterance = new SpeechSynthesisUtterance(clean);
+          utterance.lang = locale;
+          utterance.rate = 0.95;
+
+          // Attempt to find best voice, or fallback to Indian / Default voice
+          let voice = getBestVoiceForLocale(locale);
+          if (!voice && speechVoices && speechVoices.length > 0) {
+            // Check for Indian English or Hindi voice as secondary fallback
+            voice = speechVoices.find(v => v.lang && (v.lang.includes('IN') || v.lang.startsWith('hi')));
+          }
+          if (voice) utterance.voice = voice;
+
+          utterance.onend = () => {
+            if (!token || token === currentSpeechToken) updateVoiceSpeakingUI(false);
+          };
+          utterance.onerror = () => {
+            if (!token || token === currentSpeechToken) updateVoiceSpeakingUI(false);
+          };
+
+          window.speechSynthesis.speak(utterance);
+        }, 40);
+      } catch (e) {
+        updateVoiceSpeakingUI(false);
+      }
+    }
+
+    function testCurrentModalVoice() {
+      const select = document.getElementById('global-lang-select');
+      const locale = select ? select.value : 'hi-IN';
+      const sampleMap = {
+        hi: "नमस्ते! कश्मीरी गेट बस और मेट्रो टर्मिनल में आपका स्वागत है। मैं आपकी यात्रा सहायता के लिए उपस्थित हूँ।",
+        en: "Hello! Welcome to ISBT Kashmere Gate terminal navigation. I am your guide for bus and metro transit."
+      };
+      const langKey = locale.split('-')[0].toLowerCase();
+      const sample = sampleMap[langKey] || sampleMap['en'];
+      speakText(sample, locale);
+    }
+
+    function toggleCrowdSector() {
+      const panel = document.getElementById('crowd-sector-panel');
+      if (panel) panel.classList.toggle('hidden');
+    }
+
+    function renderOdometerSector(sectorKey) {
+      const data = crowdTelemetryCache[sectorKey] || DEFAULT_CROWD_TELEMETRY[sectorKey] || DEFAULT_CROWD_TELEMETRY['interstate'];
+
+      const needle = document.getElementById('odometer-needle');
+      const label = document.getElementById('odometer-label');
+      const densityVal = document.getElementById('odometer-density-val');
+      const headcount = document.getElementById('odometer-headcount');
+      const advice = document.getElementById('odometer-advice-text');
+
+      if (needle) needle.style.transform = `rotate(${data.angle}deg)`;
+      if (label) {
+        label.innerText = data.label;
+        label.className = `${data.color} font-display font-black text-2xl mt-1 tracking-wider italic`;
+      }
+      if (densityVal) densityVal.innerText = `${Number(data.density).toFixed(1)}% Congestion Level`;
+      if (headcount) headcount.innerText = Number(data.headcount).toLocaleString();
+      if (advice) advice.innerText = data.advice;
+    }
+
+    // Refresh telemetry with server or client-side realistic jitter
+    setInterval(() => {
+      fetch('/api/crowd-density')
+        .then(r => r.json())
+        .then(json => {
+          if (json && json.success && json.data) {
+            crowdTelemetryCache = json.data;
+            const sectorSelect = document.getElementById('crowd-sector-select');
+            if (sectorSelect) renderOdometerSector(sectorSelect.value);
+          }
+        })
+        .catch(() => {
+          const jitter = (Math.random() * 4 - 2);
+          Object.keys(crowdTelemetryCache).forEach(k => {
+            const sec = crowdTelemetryCache[k];
+            if (sec && typeof sec.density === 'number') {
+              sec.density = Math.min(99, Math.max(20, +(sec.density + jitter).toFixed(1)));
+              sec.headcount = Math.max(100, sec.headcount + Math.floor(Math.random() * 20 - 10));
+            }
+          });
+          const sectorSelect = document.getElementById('crowd-sector-select');
+          if (sectorSelect) renderOdometerSector(sectorSelect.value);
+        });
+    }, 15000);
+
+    function openAllStationsModal() {
+      renderStationListItems('all');
+      const modal = document.getElementById('allStationsModal');
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeAllStationsModal() {
+      const modal = document.getElementById('allStationsModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function filterStationList(type) {
+      ['all', 'isbt', 'private', 'dtc'].forEach(t => {
+        const btn = document.getElementById(`btn-filt-${t}`);
+        if (btn) btn.className = t === type ? "px-3 py-1.5 rounded-xl bg-sky-600 text-white" : "px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300";
+      });
+      renderStationListItems(type);
+    }
+
+    function renderStationListItems(filterType) {
+      const container = document.getElementById('stationsListContainer');
+      if (!container) return;
+      const filtered = filterType === 'all' ? stationsCache : stationsCache.filter(s => s.type === filterType);
+
+      container.innerHTML = filtered.map(st => `
+        <div class="bg-slate-900/80 border border-slate-700/80 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-extrabold text-sm text-white">${st.name}</span>
+              <span class="text-[10px] font-mono font-bold px-2 py-0.5 rounded ${st.type === 'isbt' ? 'bg-emerald-500/20 text-emerald-400' : (st.type === 'private' ? 'bg-purple-500/20 text-purple-400' : 'bg-sky-500/20 text-sky-400')}">
+                ${st.type.toUpperCase()}
+              </span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">${st.desc}</p>
+            <p class="text-xs text-emerald-400 mt-0.5 font-bold">Fleets: ${st.buses}</p>
+          </div>
+          <button onclick="navigateToStation('${st.id}')" class="bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow shrink-0">
+            Navigate Here
+          </button>
+        </div>
+      `).join('');
+    }
+
+    function navigateToStation(stationId) {
+      closeAllStationsModal();
+      const st = stationsCache.find(s => s.id === stationId);
+      if (!st) return;
+
+      map.flyTo([st.lat, st.lng], 15, { duration: 1.2 });
+      speakText(getPrompt('navPlotting', st.name));
+
+      if (routePolyline && map.hasLayer(routePolyline)) map.removeLayer(routePolyline);
+      routePolyline = L.polyline([COORDS_KASHMERE_GATE, [st.lat, st.lng]], {
+        color: '#0284c7',
+        weight: 5,
+        opacity: 0.9,
+        dashArray: '8, 8'
+      }).addTo(map);
+
+      const titleEl = document.getElementById('bottom-route-title');
+      const badgeEl = document.getElementById('bottom-bus-badge');
+      const subEl = document.getElementById('bottom-route-sub');
+      if (titleEl) titleEl.innerText = `ISBT Kashmere Gate ➔ ${st.name.split('(')[0]}`;
+      if (badgeEl) badgeEl.innerText = st.type.toUpperCase();
+      if (subEl) subEl.innerText = `${st.desc} • Fleets: ${st.buses}`;
+    }
+
+    function handleUniversalSearch(val) {
+      const q = val.trim().toLowerCase();
+      const resultsEl = document.getElementById('universalSearchResults');
+      const clearBtn = document.getElementById('clearUniversalSearchBtn');
+
+      if (!q) {
+        if (resultsEl) resultsEl.classList.add('hidden');
+        if (clearBtn) clearBtn.classList.add('hidden');
+        return;
+      }
+
+      if (clearBtn) clearBtn.classList.remove('hidden');
+
+      const localMatches = stationsCache.filter(m =>
+        m.name.toLowerCase().includes(q) ||
+        m.buses.toLowerCase().includes(q) ||
+        m.desc.toLowerCase().includes(q)
+      );
+
+      const renderMatches = (matches) => {
+        if (!resultsEl) return;
+        if (matches.length > 0) {
+          resultsEl.innerHTML = matches.map(m => `
+            <div onclick="navigateToStation('${m.id}'); clearUniversalSearch();" class="p-3.5 hover:bg-slate-800 cursor-pointer border-b border-slate-800 flex items-center justify-between text-xs">
+              <div>
+                <span class="font-bold text-white text-sm">${m.name}</span>
+                <p class="text-xs text-slate-400">${m.buses}</p>
+              </div>
+              <span class="text-xs bg-sky-500/20 text-sky-400 px-2.5 py-1 rounded-lg font-bold">Go</span>
+            </div>
+          `).join('');
+          resultsEl.classList.remove('hidden');
+        } else {
+          resultsEl.innerHTML = `<div class="p-3 text-xs text-slate-400 text-center font-bold">No station or bus matching "${val}"</div>`;
+          resultsEl.classList.remove('hidden');
+        }
+      };
+
+      renderMatches(localMatches);
+
+      fetch(`/api/stations?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(json => {
+          if (json && json.success && Array.isArray(json.data) && json.data.length > 0) {
+            renderMatches(json.data);
+          }
+        })
+        .catch(() => {});
+    }
+
+    function clearUniversalSearch() {
+      const input = document.getElementById('universalSearchInput');
+      const results = document.getElementById('universalSearchResults');
+      const clearBtn = document.getElementById('clearUniversalSearchBtn');
+      if (input) input.value = '';
+      if (results) results.classList.add('hidden');
+      if (clearBtn) clearBtn.classList.add('hidden');
+    }
+
+    // ==================== TRANSIT AI CHATBOT ====================
+    function toggleChatWindow() {
+      const win = document.getElementById('chat-window');
+      if (win) win.classList.toggle('hidden');
+    }
+
+    function sendQuickQuery(topic) {
+      const queryMap = {
+        hi: { metro: 'मेट्रो गेट 1 से कैसे बचें?', majnu: 'मजनू का टीला प्राइवेट वोल्वो स्टैंड कहाँ है?', '550': 'महिपालपुर के लिए बस 550 रूट', katra: 'कटरा वोल्वो बस बे 12' },
+        pa: { metro: 'ਮੈਟਰੋ ਗੇਟ 1 ਤੋਂ ਕਿਵੇਂ ਬਚੀਏ?', majnu: 'ਮਜਨੂੰ ਕਾ ਟੀਲਾ ਪ੍ਰਾਈਵੇਟ ਵੋਲਵੋ ਕਿੱਥੇ ਹੈ?', '550': 'ਮਹੀਪਾਲਪੁਰ ਲਈ ਬੱਸ 550 ਰੂਟ', katra: 'ਕਟੜਾ ਵੋਲਵੋ ਬੱਸ ਬੇਅ 12' },
+        bn: { metro: 'মেট্রো গেট ১ এ যাওয়া কিভাবে এড়াবো?', majnu: 'মজনু কা টিলা ভলভো স্ট্যান্ড কোথায়?', '550': 'মহিপালপুর বাস ৫৫০ রুট', katra: 'কাটরা ভলভো বাস বে ১২' },
+        mr: { metro: 'मेट्रो गेट १ कडे जाणे कसे टाळावे?', majnu: 'मजनू का टीला खाजगी व्होल्वो कोठे आहे?', '550': 'महिपालपूर बस ५५० मार्ग', katra: 'कटरा व्होल्वो बस बे १२' },
+        ta: { metro: 'மெட்ரோ கேட் 1 ஐ எவ்வாறு தவிர்ப்பது?', majnu: 'மஜ்னு கா திலா வோல்வோ எங்குள்ளது?', '550': 'மஹிபால்பூர் பேருந்து 550 வழித்தடம்', katra: 'கத்ரா வோல்வோ பே 12' },
+        te: { metro: 'మెట్రో గేట్ 1 లోకి వెళ్లకుండా ఎలా ఉండాలి?', majnu: 'మజ్ను కా తిలా వోల్వో ఎక్కడ ఉంది?', '550': 'మహిపాల్‌పూర్ బస్సు 550 రూట్', katra: 'కత్రా వోల్వో బే 12' },
+        gu: { metro: 'મેટ્રો ગેટ 1 માં જતા કેવી રીતે અટકવું?', majnu: 'મજનૂ કા ટીલા વોલ્વો ક્યાં છે?', '550': 'મહિપાલપુર બસ 550 રૂટ', katra: 'કટરા વોલ્વો બે 12' },
+        ur: { metro: 'میٹرو گیٹ 1 میں جانے سے کیسے بچیں؟', majnu: 'مجنوں کا ٹیلا وولوو کہاں ہے؟', '550': 'مہیپাল پور بس 550 روٹ', katra: 'کٹرا وولوو بس بے 12' },
+        fr: { metro: 'Comment éviter le métro porte 1 ?', majnu: 'Où est le terminal Volvo de Majnu Ka Tila ?', '550': 'Itinéraire bus 550 Mahipalpur', katra: 'Bus Katra Volvo quai 12' },
+        es: { metro: '¿Cómo evitar la Puerta 1 del Metro?', majnu: '¿Dónde está la terminal de autobuses de Majnu Ka Tila?', '550': 'Ruta del autobús 550 a Mahipalpur', katra: 'Autobús Volvo a Katra Andén 12' },
+        de: { metro: 'Wie vermeide ich das Metro-Tor 1?', majnu: 'Wo ist der Volvo-Busbahnhof Majnu Ka Tila?', '550': 'Buslinie 550 nach Mahipalpur', katra: 'Katra Volvo Bussteig 12' },
+        en: { metro: 'How to avoid accidental Metro gate 1?', majnu: 'Where is Majnu Ka Tila private Volvo hub?', '550': 'Bus 550 to Mahipalpur route', katra: 'Where is Katra Volvo bay?' }
+      };
+      const langKey = (currentLocale || 'en').split('-')[0].toLowerCase();
+      const queries = queryMap[langKey] || queryMap['en'];
+      const text = queries[topic] || topic;
+      const input = document.getElementById('chat-input');
+      if (input) input.value = text;
+      sendChatMessage();
+    }
+
+    async function sendChatMessage() {
+      const input = document.getElementById('chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      appendChatBubble('user', text);
+      input.value = '';
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, lang: currentLocale })
+        });
+        const data = await res.json();
+        const reply = data.reply || getLocalChatResponse(text, currentLocale);
+        appendChatBubble('assistant', reply);
+        speakText(reply, currentLocale);
+      } catch (err) {
+        const fallbackReply = getLocalChatResponse(text, currentLocale);
+        appendChatBubble('assistant', fallbackReply);
+        speakText(fallbackReply, currentLocale);
+      }
+    }
+
+    function appendChatBubble(role, msg) {
+      const container = document.getElementById('chat-messages');
+      if (!container) return;
+      const div = document.createElement('div');
+      div.className = role === 'user'
+        ? 'bg-sky-600 text-white p-3 rounded-2xl rounded-tr-none ml-auto max-w-[85%] leading-relaxed shadow-sm font-semibold'
+        : 'bg-slate-800/90 text-slate-200 p-3.5 rounded-2xl rounded-tl-none border border-slate-700/80 mr-auto max-w-[88%] leading-relaxed whitespace-pre-line shadow-sm relative group';
+
+      if (role === 'assistant') {
+        const textSpan = document.createElement('div');
+        textSpan.innerText = msg;
+        div.appendChild(textSpan);
+
+        const replayBtn = document.createElement('button');
+        replayBtn.className = 'mt-2.5 text-[10px] text-emerald-300 hover:text-white font-bold flex items-center gap-1.5 bg-emerald-950/70 hover:bg-emerald-900/90 px-2.5 py-1.5 rounded-xl border border-emerald-500/40 transition-transform active:scale-95 shadow';
+        replayBtn.innerHTML = '<i class="fa-solid fa-volume-high text-emerald-400"></i> <span>Play Voice / आवाज़ सुनें</span>';
+        replayBtn.onclick = () => speakText(msg, currentLocale);
+        div.appendChild(replayBtn);
+      } else {
+        div.innerText = msg;
+      }
+
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function toggleVoiceInput() {
+      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognition.lang = currentLocale;
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+        const micBtn = document.getElementById('mic-btn');
+        if (micBtn) micBtn.classList.add('text-rose-500', 'animate-pulse');
+
+        recognition.start();
+        recognition.onresult = (e) => {
+          const text = e.results[0][0].transcript;
+          const input = document.getElementById('chat-input');
+          if (input) input.value = text;
+          if (micBtn) micBtn.classList.remove('text-rose-500', 'animate-pulse');
+          sendChatMessage();
+        };
+        recognition.onerror = () => {
+          if (micBtn) micBtn.classList.remove('text-rose-500', 'animate-pulse');
+        };
+        recognition.onend = () => {
+          if (micBtn) micBtn.classList.remove('text-rose-500', 'animate-pulse');
+        };
+      } else {
+        alert("Speech recognition not supported in this browser. Please type your query.");
+      }
+    }
+
+    function filterLanguages(val) {
+      const q = val.toLowerCase();
+      const select = document.getElementById('global-lang-select');
+      if (!select) return;
+      for (let opt of select.options) {
+        opt.style.display = opt.innerText.toLowerCase().includes(q) ? '' : 'none';
+      }
+    }
+
+    
+    function selectModalLanguage(locale) {
+      const select = document.getElementById('global-lang-select');
+      if (select) {
+        select.value = locale;
+        syncLangCards(locale);
+      }
+    }
+
+    function syncLangCards(locale) {
+      const btnEn = document.getElementById('lang-opt-en');
+      const btnHi = document.getElementById('lang-opt-hi');
+      if (!btnEn || !btnHi) return;
+      if (locale && locale.startsWith('hi')) {
+        btnHi.className = 'border-2 border-emerald-500 bg-emerald-500/15 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 hover:border-emerald-400 transition-all text-center cursor-pointer shadow-md';
+        btnEn.className = 'border-2 border-slate-700 bg-slate-900/80 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 hover:border-emerald-400 transition-all text-center cursor-pointer shadow-md';
+      } else {
+        btnEn.className = 'border-2 border-emerald-500 bg-emerald-500/15 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 hover:border-emerald-400 transition-all text-center cursor-pointer shadow-md';
+        btnHi.className = 'border-2 border-slate-700 bg-slate-900/80 p-4 rounded-2xl flex flex-col items-center justify-center gap-2 hover:border-emerald-400 transition-all text-center cursor-pointer shadow-md';
+      }
+    }
+    function openLanguageModal() {
+      syncLangCards(currentLocale);
+      const modal = document.getElementById('language-modal');
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function applyLanguageSelection() {
+      const modal = document.getElementById('language-modal');
+      if (modal) modal.classList.add('hidden');
+      const select = document.getElementById('global-lang-select');
+      if (select) {
+        currentLocale = select.value;
+        const langName = select.options[select.selectedIndex].innerText;
+        updateUILanguage(currentLocale);
+        speakText(getPrompt('langConfirmed', langName), currentLocale);
+      }
+    }
+
+
+    // ==================== BUS STATUS MODULE ====================
+    // Real ISBT Kashmere Gate bay layout data
+    const BUS_STATUS_DATA = [
+      // Interstate Deck — Level 2 (Bays 1–42)
+      { bay:'Bay 01', route:'PUNBUS 101', dest:'Amritsar', operator:'PUNBUS', type:'interstate', wing:'Punjab & Haryana Wing', arrivalTime:'06:30', departureTime:'07:00', freq:'2 times/day', fare:'₹620', status:'On Time', level:'Level 2', coords:[28.6680,77.2270] },
+      { bay:'Bay 02', route:'HRTC 20', dest:'Shimla', operator:'HRTC', type:'interstate', wing:'Himachal Wing', arrivalTime:'07:15', departureTime:'07:45', freq:'3 times/day', fare:'₹480', status:'On Time', level:'Level 2', coords:[28.6681,77.2272] },
+      { bay:'Bay 03', route:'HRTC 24', dest:'Dharamshala', operator:'HRTC', type:'interstate', wing:'Himachal Wing', arrivalTime:'08:00', departureTime:'08:30', freq:'2 times/day', fare:'₹550', status:'Delayed 15 min', level:'Level 2', coords:[28.6682,77.2273] },
+      { bay:'Bay 04', route:'Haryana Roadways 60', dest:'Ambala', operator:'Haryana Roadways', type:'interstate', wing:'Punjab & Haryana Wing', arrivalTime:'06:00', departureTime:'06:30', freq:'Every 30 min', fare:'₹200', status:'On Time', level:'Level 2', coords:[28.6683,77.2275] },
+      { bay:'Bay 05', route:'Haryana Roadways 70', dest:'Chandigarh', operator:'Haryana Roadways', type:'interstate', wing:'Punjab & Haryana Wing', arrivalTime:'07:00', departureTime:'07:30', freq:'Every 1 hr', fare:'₹330', status:'On Time', level:'Level 2', coords:[28.6683,77.2277] },
+      { bay:'Bay 06', route:'Haryana Roadways 85', dest:'Karnal', operator:'Haryana Roadways', type:'interstate', wing:'Punjab & Haryana Wing', arrivalTime:'09:00', departureTime:'09:30', freq:'Every 1 hr', fare:'₹160', status:'On Time', level:'Level 2', coords:[28.6684,77.2278] },
+      { bay:'Bay 07', route:'RSRTC 110', dest:'Jaipur (Ordinary)', operator:'RSRTC', type:'interstate', wing:'Rajasthan Wing', arrivalTime:'09:30', departureTime:'10:00', freq:'2 times/day', fare:'₹380', status:'On Time', level:'Level 2', coords:[28.6684,77.2279] },
+      { bay:'Bay 08', route:'RSRTC Gold Volvo', dest:'Jaipur (Volvo)', operator:'RSRTC', type:'interstate', wing:'Rajasthan Wing', arrivalTime:'18:00', departureTime:'18:30', freq:'1 time/day', fare:'₹680', status:'On Time', level:'Level 2', coords:[28.6685,77.2280] },
+      { bay:'Bay 09', route:'HRTC Volvo', dest:'Kullu–Manali (Semi-Volvo)', operator:'HRTC', type:'interstate', wing:'Himachal Wing', arrivalTime:'19:00', departureTime:'19:30', freq:'1 time/day', fare:'₹980', status:'On Time', level:'Level 2', coords:[28.6685,77.2281] },
+      { bay:'Bay 10', route:'Haryana AC 50', dest:'Rohtak', operator:'Haryana Roadways', type:'interstate', wing:'Punjab & Haryana Wing', arrivalTime:'07:45', departureTime:'08:00', freq:'Every 45 min', fare:'₹140', status:'On Time', level:'Level 2', coords:[28.6686,77.2282] },
+      { bay:'Bay 11', route:'HRTC 30', dest:'Mandi', operator:'HRTC', type:'interstate', wing:'Himachal Wing', arrivalTime:'10:00', departureTime:'10:30', freq:'2 times/day', fare:'₹520', status:'On Time', level:'Level 2', coords:[28.6686,77.2283] },
+      { bay:'Bay 12', route:'PUNBUS Volvo Sleeper', dest:'Katra / Vaishno Devi', operator:'PUNBUS', type:'interstate', wing:'Himachal Wing', arrivalTime:'06:30', departureTime:'19:45', freq:'1 time/day', fare:'₹1,250', status:'On Time', level:'Level 2', coords:[28.6687,77.2283] },
+      { bay:'Bay 13', route:'HRTC Himsuta', dest:'Shimla (AC Volvo)', operator:'HRTC', type:'interstate', wing:'Himachal Wing', arrivalTime:'06:00', departureTime:'21:00', freq:'1 time/day', fare:'₹850', status:'On Time', level:'Level 2', coords:[28.6687,77.2284] },
+      { bay:'Bay 14', route:'HRTC Himsuta Volvo', dest:'Manali (Volvo)', operator:'HRTC', type:'interstate', wing:'Himachal Wing', arrivalTime:'07:00', departureTime:'20:15', freq:'1 time/day', fare:'₹1,420', status:'On Time', level:'Level 2', coords:[28.6688,77.2285] },
+      { bay:'Bay 15', route:'HRTC 42', dest:'Kasol / Bhuntar', operator:'HRTC', type:'interstate', wing:'Himachal Wing', arrivalTime:'10:30', departureTime:'11:00', freq:'1 time/day', fare:'₹780', status:'Delayed 20 min', level:'Level 2', coords:[28.6688,77.2286] },
+      { bay:'Bay 16', route:'PUNBUS 55', dest:'Ludhiana', operator:'PUNBUS', type:'interstate', wing:'Punjab & Haryana Wing', arrivalTime:'08:30', departureTime:'09:00', freq:'2 times/day', fare:'₹450', status:'On Time', level:'Level 2', coords:[28.6687,77.2287] },
+      { bay:'Bay 17', route:'Haryana Roadways 90', dest:'Bhiwani', operator:'Haryana Roadways', type:'interstate', wing:'Punjab & Haryana Wing', arrivalTime:'10:00', departureTime:'10:30', freq:'Every 1 hr', fare:'₹170', status:'On Time', level:'Level 2', coords:[28.6686,77.2288] },
+      { bay:'Bay 18', route:'DTC Feeder 194', dest:'Narela via Ring Road', operator:'DTC', type:'local', wing:'DTC City Bus', arrivalTime:'Every 15 min', departureTime:'Every 15 min', freq:'Every 15 min', fare:'₹30', status:'On Time', level:'Level 1', coords:[28.6685,77.2289] },
+      { bay:'Bay 19', route:'DTC 202', dest:'Anand Vihar ISBT', operator:'DTC', type:'local', wing:'DTC City Bus', arrivalTime:'Every 20 min', departureTime:'Every 20 min', freq:'Every 20 min', fare:'₹25', status:'On Time', level:'Level 1', coords:[28.6684,77.2290] },
+      { bay:'Bay 20', route:'HRTC 10', dest:'Kalka / Panchkula', operator:'HRTC', type:'interstate', wing:'Himachal Wing', arrivalTime:'11:00', departureTime:'11:30', freq:'2 times/day', fare:'₹290', status:'On Time', level:'Level 2', coords:[28.6684,77.2291] },
+      { bay:'Bay 31', route:'RSRTC 200', dest:'Bikaner', operator:'RSRTC', type:'interstate', wing:'Rajasthan Wing', arrivalTime:'14:00', departureTime:'14:30', freq:'1 time/day', fare:'₹560', status:'On Time', level:'Level 2', coords:[28.6680,77.2292] },
+      { bay:'Bay 32', route:'RSRTC 210', dest:'Ajmer / Pushkar', operator:'RSRTC', type:'interstate', wing:'Rajasthan Wing', arrivalTime:'15:00', departureTime:'15:30', freq:'1 time/day', fare:'₹480', status:'On Time', level:'Level 2', coords:[28.6679,77.2293] },
+      { bay:'Bay 35', route:'UPSRTC 300', dest:'Agra (Express)', operator:'UPSRTC', type:'interstate', wing:'UP Wing', arrivalTime:'08:00', departureTime:'08:30', freq:'Every 1 hr', fare:'₹220', status:'On Time', level:'Level 2', coords:[28.6678,77.2290] },
+      { bay:'Bay 36', route:'UPSRTC Janrath', dest:'Lucknow', operator:'UPSRTC', type:'interstate', wing:'UP Wing', arrivalTime:'21:00', departureTime:'21:30', freq:'2 times/day', fare:'₹420', status:'On Time', level:'Level 2', coords:[28.6677,77.2289] },
+      { bay:'Bay 40', route:'DTC 101', dest:'Delhi Cantonment', operator:'DTC', type:'local', wing:'DTC City Bus', arrivalTime:'Every 10 min', departureTime:'Every 10 min', freq:'Every 10 min', fare:'₹25', status:'On Time', level:'Level 1', coords:[28.6676,77.2287] },
+      { bay:'Bay 41', route:'DTC Route 550', dest:'Mahipalpur / IGI Airport', operator:'DTC', type:'local', wing:'DTC City Bus', arrivalTime:'Every 10 min', departureTime:'Every 10 min', freq:'Every 10 min', fare:'₹25', status:'Running', level:'Level 1', coords:[28.6675,77.2285] },
+      { bay:'Bay 42', route:'DTC 540', dest:'Dhaula Kuan', operator:'DTC', type:'local', wing:'DTC City Bus', arrivalTime:'Every 15 min', departureTime:'Every 15 min', freq:'Every 15 min', fare:'₹20', status:'On Time', level:'Level 1', coords:[28.6674,77.2283] },
+    ];
+
+    let currentBusStatusTab = 'bay';
+    let busStatusRefreshInterval = null;
+
+    const BS_TRANSLATIONS = {
+      en: { title:'Bus Status — ISBT Kashmere Gate', sub:'Live Bay, Arrival & Departure Board', tabBay:'Bay / Location', tabArrival:'Arrival Time', tabDeparture:'Departure Time', speak:'Announce Status', search:'Search bus route, bay, or destination...' },
+      hi: { title:'बस स्थिति — आईएसबीटी कश्मीरी गेट', sub:'लाइव बे, आगमन और प्रस्थान बोर्ड', tabBay:'बे / स्थान', tabArrival:'आगमन समय', tabDeparture:'प्रस्थान समय', speak:'स्थिति सुनें', search:'बस रूट, बे या गंतव्य खोजें...' }
+    };
+
+    function openBusStatusModal() {
+      const modal = document.getElementById('busStatusModal');
+      if (modal) modal.classList.remove('hidden');
+      renderBusStatusTab('bay');
+      updateBusStatusLangUI();
+      startBusStatusClock();
+      if (busStatusRefreshInterval) clearInterval(busStatusRefreshInterval);
+      busStatusRefreshInterval = setInterval(() => renderBusStatusTab(currentBusStatusTab), 60000);
+    }
+
+    function closeBusStatusModal() {
+      const modal = document.getElementById('busStatusModal');
+      if (modal) modal.classList.add('hidden');
+      if (busStatusRefreshInterval) { clearInterval(busStatusRefreshInterval); busStatusRefreshInterval = null; }
+    }
+
+    function updateBusStatusLangUI() {
+      const lk = (currentLocale || 'en').split('-')[0].toLowerCase();
+      const tr = BS_TRANSLATIONS[lk] || BS_TRANSLATIONS['en'];
+      const title = document.getElementById('bus-status-modal-title');
+      if (title) title.innerHTML = `<i class="fa-solid fa-signal text-amber-400 text-sm"></i> ${tr.title}`;
+      const sub = document.getElementById('bus-status-modal-sub');
+      if (sub) sub.textContent = tr.sub;
+      const tabBay = document.getElementById('bs-tab-bay-label');
+      if (tabBay) tabBay.textContent = tr.tabBay;
+      const tabArr = document.getElementById('bs-tab-arrival-label');
+      if (tabArr) tabArr.textContent = tr.tabArrival;
+      const tabDep = document.getElementById('bs-tab-departure-label');
+      if (tabDep) tabDep.textContent = tr.tabDeparture;
+      const speakBtn = document.getElementById('bs-speak-btn-label');
+      if (speakBtn) speakBtn.textContent = tr.speak;
+      const searchInput = document.getElementById('bs-search-input');
+      if (searchInput) searchInput.placeholder = tr.search;
+      // Header button
+      const hdrBtn = document.getElementById('header-bus-status-btn-text');
+      if (hdrBtn) hdrBtn.textContent = lk === 'hi' ? 'बस स्थिति' : 'Bus Status';
+    }
+
+    function startBusStatusClock() {
+      const updateClock = () => {
+        const cl = document.getElementById('bs-live-clock');
+        if (cl) {
+          const now = new Date();
+          cl.textContent = now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true, hour:'2-digit', minute:'2-digit' });
+        }
+      };
+      updateClock();
+      setInterval(updateClock, 10000);
+    }
+
+    function switchBusStatusTab(tab) {
+      currentBusStatusTab = tab;
+      ['bay','arrival','departure'].forEach(t => {
+        const panel = document.getElementById(`bs-panel-${t}`);
+        const tabBtn = document.getElementById(`bs-tab-${t}`);
+        if (panel) panel.classList.toggle('hidden', t !== tab);
+        if (tabBtn) {
+          tabBtn.className = t === tab
+            ? 'flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-black text-xs transition-all'
+            : 'flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs transition-all';
+        }
+      });
+      renderBusStatusTab(tab);
+      const searchInput = document.getElementById('bs-search-input');
+      if (searchInput) searchInput.value = '';
+    }
+
+    function getStatusBadge(status) {
+      if (!status) return '';
+      const s = status.toLowerCase();
+      if (s.includes('delay')) return `<span class="bg-rose-500/20 text-rose-300 border border-rose-500/40 px-2 py-0.5 rounded-lg font-black text-[10px]">⏱ ${status}</span>`;
+      if (s.includes('cancel')) return `<span class="bg-red-700/30 text-red-300 border border-red-700/50 px-2 py-0.5 rounded-lg font-black text-[10px]">✖ ${status}</span>`;
+      if (s.includes('running') || s.includes('on time')) return `<span class="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded-lg font-black text-[10px]">✔ ${status}</span>`;
+      return `<span class="bg-sky-500/20 text-sky-300 border border-sky-500/40 px-2 py-0.5 rounded-lg font-black text-[10px]">${status}</span>`;
+    }
+
+    function getTypeColor(type) {
+      if (type === 'interstate') return 'emerald';
+      if (type === 'local') return 'sky';
+      return 'slate';
+    }
+
+    function renderBusStatusTab(tab, filterQ) {
+      const q = (filterQ || '').toLowerCase();
+      let data = BUS_STATUS_DATA;
+      if (q) {
+        data = data.filter(b =>
+          b.bay.toLowerCase().includes(q) ||
+          b.route.toLowerCase().includes(q) ||
+          b.dest.toLowerCase().includes(q) ||
+          b.operator.toLowerCase().includes(q) ||
+          b.wing.toLowerCase().includes(q)
+        );
+      }
+
+      if (tab === 'bay') {
+        const grid = document.getElementById('bs-bay-grid');
+        if (!grid) return;
+        grid.innerHTML = data.map(b => {
+          const col = getTypeColor(b.type);
+          return `
+          <div class="bg-slate-900/80 border border-slate-700/80 rounded-2xl p-3.5 shadow-md flex flex-col gap-2 hover:border-amber-500/50 transition-all">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <div class="w-10 h-10 rounded-xl bg-${col}-500/15 border border-${col}-500/40 text-${col}-400 flex items-center justify-center text-sm font-black shrink-0">
+                  <i class="fa-solid fa-bus"></i>
+                </div>
+                <div>
+                  <div class="text-xs font-black text-white">${b.bay} <span class="text-amber-400 font-mono">— ${b.level}</span></div>
+                  <div class="text-[10px] text-slate-400 font-bold">${b.wing}</div>
+                </div>
+              </div>
+              ${getStatusBadge(b.status)}
+            </div>
+            <div class="border-t border-slate-800 pt-2 space-y-1">
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="text-slate-400 font-bold">Route</span>
+                <span class="text-white font-black">${b.route}</span>
+              </div>
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="text-slate-400 font-bold">Destination</span>
+                <span class="text-emerald-300 font-black">${b.dest}</span>
+              </div>
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="text-slate-400 font-bold">Operator</span>
+                <span class="text-sky-300 font-semibold">${b.operator}</span>
+              </div>
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="text-slate-400 font-bold">Fare</span>
+                <span class="text-amber-300 font-black">${b.fare}</span>
+              </div>
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="text-slate-400 font-bold">Frequency</span>
+                <span class="text-slate-200 font-semibold">${b.freq}</span>
+              </div>
+            </div>
+            <button onclick="navigateToBayOnMap(${b.coords[0]}, ${b.coords[1]}, '${b.bay} — ${b.dest}')" class="mt-1 w-full bg-amber-500/15 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[10px] font-bold py-1.5 rounded-xl flex items-center justify-center gap-1.5 transition-all">
+              <i class="fa-solid fa-map-location-dot text-amber-400"></i> Show on Map
+            </button>
+          </div>`;
+        }).join('');
+        if (!data.length) grid.innerHTML = '<div class="col-span-2 text-center text-slate-400 font-bold py-10">No results found</div>';
+      }
+
+      if (tab === 'arrival') {
+        const tbody = document.getElementById('bs-arrival-tbody');
+        if (!tbody) return;
+        tbody.innerHTML = data.map((b, i) => `
+          <tr class="${i % 2 === 0 ? 'bg-slate-900/40' : 'bg-slate-800/20'} hover:bg-amber-500/5 transition-colors">
+            <td class="p-3">
+              <div class="font-black text-white">${b.route}</div>
+              <div class="text-[10px] text-slate-400">${b.operator}</div>
+            </td>
+            <td class="p-3 text-slate-300 font-semibold">${b.dest}</td>
+            <td class="p-3 text-center">
+              <span class="text-sky-300 font-black font-mono text-sm">${b.arrivalTime}</span>
+            </td>
+            <td class="p-3 text-center">${getStatusBadge(b.status)}</td>
+            <td class="p-3 text-center">
+              <span class="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-black text-[10px] px-2 py-0.5 rounded-lg">${b.bay}</span>
+            </td>
+          </tr>`).join('');
+        if (!data.length) tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-slate-400 font-bold">No results found</td></tr>';
+      }
+
+      if (tab === 'departure') {
+        const tbody = document.getElementById('bs-departure-tbody');
+        if (!tbody) return;
+        // Sort by departure time
+        const sorted = [...data].sort((a, b) => a.departureTime.localeCompare(b.departureTime));
+        tbody.innerHTML = sorted.map((b, i) => `
+          <tr class="${i % 2 === 0 ? 'bg-slate-900/40' : 'bg-slate-800/20'} hover:bg-emerald-500/5 transition-colors">
+            <td class="p-3">
+              <div class="font-black text-white">${b.route}</div>
+              <div class="text-[10px] text-slate-400">${b.operator}</div>
+            </td>
+            <td class="p-3 text-slate-300 font-semibold">${b.dest}</td>
+            <td class="p-3 text-center">
+              <span class="text-emerald-300 font-black font-mono text-sm">${b.departureTime}</span>
+            </td>
+            <td class="p-3 text-center">${getStatusBadge(b.status)}</td>
+            <td class="p-3 text-center">
+              <span class="bg-amber-500/20 text-amber-300 border border-amber-500/40 font-black text-[10px] px-2 py-0.5 rounded-lg">${b.bay}</span>
+            </td>
+          </tr>`).join('');
+        if (!data.length) tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-slate-400 font-bold">No results found</td></tr>';
+      }
+    }
+
+    function filterBusStatusTable(val) {
+      renderBusStatusTab(currentBusStatusTab, val);
+    }
+
+    function navigateToBayOnMap(lat, lng, label) {
+      closeBusStatusModal();
+      if (map) {
+        map.flyTo([lat, lng], 19, { duration: 1.2 });
+        L.popup({ closeButton: true, maxWidth: 280 })
+          .setLatLng([lat, lng])
+          .setContent(`<div class="text-xs font-bold text-slate-800"><i class="fa-solid fa-bus text-amber-500 mr-1"></i> ${label}</div>`)
+          .openOn(map);
+      }
+    }
+
+    function speakBusStatusSummary() {
+      const lk = (currentLocale || 'en').split('-')[0].toLowerCase();
+      let summary = '';
+      if (lk === 'hi') {
+        summary = 'आईएसबीटी कश्मीरी गेट बस स्थिति: बे 12 से कटरा वोल्वो शाम 19:45 बजे। बे 14 से मनाली वोल्वो रात 20:15 बजे। बे 08 से जयपुर वोल्वो शाम 18:30 बजे। बे 41 से महिपालपुर के लिए बस 550 हर 10 मिनट पर।';
+      } else {
+        summary = 'ISBT Kashmere Gate Bus Status: Bay 12 Katra Volvo departs 19:45. Bay 14 Manali Volvo departs 20:15. Bay 08 Jaipur Volvo at 18:30. Bay 41 Bus 550 to Mahipalpur every 10 minutes.';
+      }
+      speakText(summary, currentLocale);
+    }
+
+    // ==================== END BUS STATUS MODULE ====================
+
+    window.onload = function() {
+      startLiveClock();
+      initMap();
+      fetchBackendData();
+
+      setTimeout(() => {
+        const splash = document.getElementById('splash-screen');
+        if (splash) {
+          splash.style.opacity = '0';
+          setTimeout(() => {
+            splash.style.display = 'none';
+            openLanguageModal();
+          }, 600);
+        }
+      }, 1500);
+    };
+  </script>
+</body>
+</html>
